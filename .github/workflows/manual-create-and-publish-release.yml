@@ -1,0 +1,112 @@
+name: 'Create & Publish Release'
+
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          tags: true
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+      
+      - name: Install dependencies in current repository
+        uses: ./.github/actions/yarn-nm-install
+      
+      - name: Get Version from lerna.json
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./lerna.json').version")
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "Current version: $VERSION"
+      
+      - name: Create Git Tag if not exists
+        run: |
+          TAG="v${{ env.VERSION }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists. Skipping tag creation."
+          else
+            echo "Creating a new tag $TAG."
+            git tag "$TAG"
+            git push origin "$TAG"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Generate Release Notes from CHANGELOG.md
+        id: notes
+        run: |
+          VERSION="${{ env.VERSION }}"
+          echo "Looking for changelog section for version: $VERSION"
+          
+          # Select the header format
+          if grep -q "^## <small>${VERSION} " CHANGELOG.md; then
+            echo "Found patch version format with <small> tags"
+            TAG_HEADER="## <small>${VERSION} "
+            END_PATTERN="^## <small>"
+          elif grep -q "^## ${VERSION} " CHANGELOG.md; then
+            echo "Found minor/major version format without <small> tags"
+            TAG_HEADER="## ${VERSION} "
+            END_PATTERN="^## "
+          else
+            echo "⚠️  Changelog section for version ${VERSION} not found. Release notes will be empty."
+            TAG_HEADER=""
+            END_PATTERN=""
+          fi
+          
+          # If we found a title, we try to cut out the block
+          if [ -n "$TAG_HEADER" ]; then
+            NOTES=$(sed -n "/^${TAG_HEADER}/,/${END_PATTERN}/p" CHANGELOG.md \
+              | sed '1d;$d' \
+              | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+          else
+            NOTES=""
+          fi
+          
+          # If nothing comes out, we warn, but do not fall
+          if [ -z "$NOTES" ]; then
+            echo "⚠️  No release notes found for $VERSION; proceeding with empty body."
+            NOTES="(no changelog for this release)"
+          else
+            echo "✅ Successfully extracted release notes"
+            echo "Preview:"
+            echo "$NOTES" | head -3
+          fi
+          
+          echo "body<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES"     >> $GITHUB_OUTPUT
+          echo "EOF"        >> $GITHUB_OUTPUT
+
+      
+      - name: Publish Release Packages
+        id: publish_release_packages
+        run: |
+          echo "Publishing packages to NPM..."
+          bash ./scripts/publish-release.sh
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HUSKY: '0'  # Disable HUSKY hooks during CI
+      
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: "v${{ env.VERSION }}"
+          release_name: "v${{ env.VERSION }} (Release)"
+          draft: false
+          prerelease: false
+          body: ${{ steps.notes.outputs.body }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

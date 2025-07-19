@@ -1,0 +1,77 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+      {
+          "name": "Debug E2E Tests",
+          "type": "node",
+          "runtimeVersion": "18.18.2",
+          "request": "launch",
+          "runtimeArgs": [
+            "--inspect-brk"
+          ],
+          "cwd": "${workspaceFolder}/e2e-tests",
+          "program": "${workspaceFolder}/node_modules/.bin/jest",
+          "args": [
+            "--runInBand",
+            "--config",
+            "./jest.config.mjs",
+            "--detectOpenHandles",
+            "--forceExit"
+          ],
+          "console": "integratedTerminal",
+          "internalConsoleOptions": "neverOpen",
+          "env": {
+            "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.json"
+          },
+          "windows": {
+            "program": "${workspaceFolder}/node_modules/jest/bin/jest"
+          }
+      },
+      {
+        "name": "Debug Integration Tests",
+        "type": "node",
+        "runtimeVersion": "18.18.2",
+        "request": "launch",
+        "runtimeArgs": [
+          "--inspect-brk"
+        ],
+        "cwd": "${workspaceFolder}/integration-tests",
+        "program": "${workspaceFolder}/node_modules/.bin/jest",
+        "args": [
+          "--runInBand",
+          "--config",
+          "./jest.config.mjs",
+          "--detectOpenHandles",
+          "--forceExit"
+        ],
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "env": {
+          "TS_NODE_PROJECT": "${workspaceFolder}/tsconfig.json"
+        },
+        "windows": {
+          "program": "${workspaceFolder}/node_modules/jest/bin/jest"
+        }
+      },
+      {
+        "name": "Debug Gas Price Monitoring",
+        "type": "node",
+        "runtimeVersion": "18.18.2",
+        "request": "launch",
+        "runtimeArgs": [
+          "--inspect-brk",
+          "-r",
+          "ts-node/register"
+        ],
+        "cwd": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring",
+        "program": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/src/main.ts",
+        "envFile": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/.env",
+        "console": "integratedTerminal",
+        "internalConsoleOptions": "neverOpen",
+        "env": {
+          "TS_NODE_PROJECT": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/tsconfig.json"
+        },
+      }
+    ]
+}
+  
