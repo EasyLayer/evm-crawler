@@ -10,7 +10,7 @@
     "start": "node --inspect -r ts-node/register src/main.ts"
   },
   "dependencies": {
-    "@easylayer/common": "0.9.1",
+    "@easylayer/common": "0.9.2",
     "@easylayer/evm-crawler": "0.0.1"
   },
   "devDependencies": {
