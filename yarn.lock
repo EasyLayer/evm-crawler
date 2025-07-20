@@ -728,7 +728,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@easylayer/evm-crawler@npm:0.0.1, @easylayer/evm-crawler@workspace:package":
+"@easylayer/evm-crawler@npm:0.0.2, @easylayer/evm-crawler@workspace:package":
   version: 0.0.0-use.local
   resolution: "@easylayer/evm-crawler@workspace:package"
   dependencies:
@@ -5293,7 +5293,7 @@ __metadata:
   resolution: "e2e-evm-crawler@workspace:e2e-tests"
   dependencies:
     "@easylayer/common": "npm:0.9.2"
-    "@easylayer/evm-crawler": "npm:0.0.1"
+    "@easylayer/evm-crawler": "npm:0.0.2"
     "@types/jest": "npm:29.5.11"
     "@types/node": "npm:20.10.4"
     dotenv: "npm:16.4.5"
@@ -6505,7 +6505,7 @@ __metadata:
   resolution: "gas-price-monitoring@workspace:examples/real-time-data/gas-price-monitoring"
   dependencies:
     "@easylayer/common": "npm:0.9.2"
-    "@easylayer/evm-crawler": "npm:0.0.1"
+    "@easylayer/evm-crawler": "npm:0.0.2"
     "@types/node": "npm:20.10.4"
     rimraf: "npm:5.0.5"
     ts-node: "npm:10.9.2"
@@ -7369,7 +7369,7 @@ __metadata:
   resolution: "integration-crawler@workspace:integration-tests"
   dependencies:
     "@easylayer/common": "npm:0.9.2"
-    "@easylayer/evm-crawler": "npm:0.0.1"
+    "@easylayer/evm-crawler": "npm:0.0.2"
     "@easylayer/transport-sdk": "npm:1.1.1"
     "@types/jest": "npm:29.5.11"
     "@types/node": "npm:20.10.4"
