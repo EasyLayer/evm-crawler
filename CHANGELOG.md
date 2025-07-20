@@ -1,3 +1,14 @@
+## <small>0.0.3 (2025-07-20)</small>
+
+
+
+
+## <small>0.0.3-alpha.0 (2025-07-20)</small>
+
+* refactor: added base docs; ([ee31552](https://github.com/EasyLayer/evm-crawler/commit/ee31552))
+
+
+
 ## <small>0.0.2 (2025-07-20)</small>
 
 * refactor: fixed lerna config; ([fa03109](https://github.com/EasyLayer/evm-crawler/commit/fa03109))
