@@ -1,4 +1,4 @@
-import { Module, DynamicModule } from '@nestjs/common';
+import { Module, DynamicModule, Provider } from '@nestjs/common';
 import { transformAndValidate } from 'class-transformer-validator';
 import { CqrsModule, EventPublisher } from '@easylayer/common/cqrs';
 import type { IQueryHandler, IEventHandler } from '@easylayer/common/cqrs';
@@ -30,22 +30,24 @@ import { AppConfig, BusinessConfig, EventStoreConfig, BlocksQueueConfig, Provide
 import { ModelType, ModelFactoryService } from './framework';
 import { MetricsService } from './metrics.service';
 
-const appName = `${process?.env?.EVM_CRAWLER_APPLICATION_NAME || 'ethereum'}`; // TODO: think where to put this
+const appName = `${process?.env?.APPLICATION_NAME || 'ethereum'}`; // TODO: think where to put this
 
 export const EVENTSTORE_NAME = `${appName}-eventstore`;
 
-interface AppModuleOptions {
-  Models: ModelType[];
+export interface AppModuleOptions {
+  Models?: ModelType[];
   QueryHandlers?: Array<new (...args: any[]) => IQueryHandler>;
   EventHandlers?: Array<new (...args: any[]) => IEventHandler>;
+  Providers?: Array<new (...args: any[]) => Provider>;
 }
 
 @Module({})
 export class AppModule {
   static async register({
-    Models,
+    Models = [],
     QueryHandlers: UserQueryHandlers = [],
     EventHandlers: UserEventHandlers = [],
+    Providers = [],
   }: AppModuleOptions): Promise<DynamicModule> {
     const eventstoreConfig = await transformAndValidate(EventStoreConfig, process.env, {
       validator: { whitelist: true },
@@ -63,10 +65,10 @@ export class AppModule {
       validator: { whitelist: true },
     });
 
-    const queueIteratorBlocksBatchSize = businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_WEIGHT * 2;
-    const queueLoaderRequestBlocksBatchSize = businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_WEIGHT * 2;
+    const queueIteratorBlocksBatchSize = businessConfig.NETWORK_MAX_BLOCK_WEIGHT * 2;
+    const queueLoaderRequestBlocksBatchSize = businessConfig.NETWORK_MAX_BLOCK_WEIGHT * 2;
     const maxQueueSize = queueIteratorBlocksBatchSize * 8;
-    const minTransferSize = businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_SIZE - 1;
+    const minTransferSize = businessConfig.NETWORK_MAX_BLOCK_SIZE - 1;
 
     const networkModel = new Network({ aggregateId: NETWORK_AGGREGATE_ID, maxSize: 0 });
     // Create instances of models without merging for basic instances
@@ -77,29 +79,29 @@ export class AppModule {
 
     // Network configuration
     const network: NetworkConfig = {
-      chainId: businessConfig.EVM_CRAWLER_NETWORK_CHAIN_ID,
-      nativeCurrencySymbol: businessConfig.EVM_CRAWLER_NETWORK_NATIVE_CURRENCY_SYMBOL,
-      nativeCurrencyDecimals: businessConfig.EVM_CRAWLER_NETWORK_NATIVE_CURRENCY_DECIMALS,
-      blockTime: businessConfig.EVM_CRAWLER_NETWORK_BLOCK_TIME,
-      hasEIP1559: businessConfig.EVM_CRAWLER_NETWORK_HAS_EIP1559,
-      hasWithdrawals: businessConfig.EVM_CRAWLER_NETWORK_HAS_WITHDRAWALS,
-      hasBlobTransactions: businessConfig.EVM_CRAWLER_NETWORK_HAS_BLOB_TRANSACTIONS,
-      maxBlockSize: businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_SIZE,
-      maxBlockWeight: businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_WEIGHT,
-      maxCodeSize: businessConfig.EVM_CRAWLER_NETWORK_MAX_CODE_SIZE,
-      maxGasLimit: businessConfig.EVM_CRAWLER_NETWORK_MAX_GAS_LIMIT,
-      maxInitCodeSize: businessConfig.EVM_CRAWLER_NETWORK_MAX_INIT_CODE_SIZE,
-      maxTransactionSize: businessConfig.EVM_CRAWLER_NETWORK_MAX_TRANSACTION_SIZE,
-      maxBaseFeePerGas: businessConfig.EVM_CRAWLER_NETWORK_MAX_BASE_FEE_PER_GAS,
-      maxBlobGasPerBlock: businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOB_GAS_PER_BLOCK,
-      maxPriorityFeePerGas: businessConfig.EVM_CRAWLER_NETWORK_MAX_PRIORITY_FEE_PER_GAS,
-      minGasPrice: businessConfig.EVM_CRAWLER_NETWORK_MIN_GAS_PRICE,
+      chainId: businessConfig.NETWORK_CHAIN_ID,
+      nativeCurrencySymbol: businessConfig.NETWORK_NATIVE_CURRENCY_SYMBOL,
+      nativeCurrencyDecimals: businessConfig.NETWORK_NATIVE_CURRENCY_DECIMALS,
+      blockTime: businessConfig.NETWORK_BLOCK_TIME,
+      hasEIP1559: businessConfig.NETWORK_HAS_EIP1559,
+      hasWithdrawals: businessConfig.NETWORK_HAS_WITHDRAWALS,
+      hasBlobTransactions: businessConfig.NETWORK_HAS_BLOB_TRANSACTIONS,
+      maxBlockSize: businessConfig.NETWORK_MAX_BLOCK_SIZE,
+      maxBlockWeight: businessConfig.NETWORK_MAX_BLOCK_WEIGHT,
+      maxCodeSize: businessConfig.NETWORK_MAX_CODE_SIZE,
+      maxGasLimit: businessConfig.NETWORK_MAX_GAS_LIMIT,
+      maxInitCodeSize: businessConfig.NETWORK_MAX_INIT_CODE_SIZE,
+      maxTransactionSize: businessConfig.NETWORK_MAX_TRANSACTION_SIZE,
+      maxBaseFeePerGas: businessConfig.NETWORK_MAX_BASE_FEE_PER_GAS,
+      maxBlobGasPerBlock: businessConfig.NETWORK_MAX_BLOB_GAS_PER_BLOCK,
+      maxPriorityFeePerGas: businessConfig.NETWORK_MAX_PRIORITY_FEE_PER_GAS,
+      minGasPrice: businessConfig.NETWORK_MIN_GAS_PRICE,
     };
 
     const rateLimits: RateLimits = {
-      maxConcurrentRequests: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS,
-      maxBatchSize: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE,
-      requestDelayMs: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS,
+      maxConcurrentRequests: providersConfig.NETWORK_PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS,
+      maxBatchSize: providersConfig.NETWORK_PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE,
+      requestDelayMs: providersConfig.NETWORK_PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS,
     };
 
     return {
@@ -118,10 +120,10 @@ export class AppModule {
           providers: [
             {
               connection: {
-                type: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_TYPE as NodeProviderTypes,
-                httpUrl: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_NODE_HTTP_URL,
-                wsUrl: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_NODE_WS_URL,
-                responseTimeout: providersConfig.EVM_CRAWLER_NETWORK_PROVIDER_REQUEST_TIMEOUT,
+                type: providersConfig.NETWORK_PROVIDER_TYPE as NodeProviderTypes,
+                httpUrl: providersConfig.NETWORK_PROVIDER_NODE_HTTP_URL,
+                wsUrl: providersConfig.NETWORK_PROVIDER_NODE_WS_URL,
+                responseTimeout: providersConfig.NETWORK_PROVIDER_REQUEST_TIMEOUT,
               },
             },
           ],
@@ -130,29 +132,29 @@ export class AppModule {
           name: EVENTSTORE_NAME,
           aggregates: [...userModels, networkModel],
           logging: eventstoreConfig.isLogging(),
-          snapshotInterval: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_SNAPSHOT_INTERVAL,
-          sqliteBatchSize: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_INSERT_BATCH_SIZE,
-          type: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_TYPE,
-          database: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_NAME,
-          ...(eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_HOST && {
-            host: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_HOST,
+          snapshotInterval: eventstoreConfig.EVENTSTORE_SNAPSHOT_INTERVAL,
+          sqliteBatchSize: eventstoreConfig.EVENTSTORE_INSERT_BATCH_SIZE,
+          type: eventstoreConfig.EVENTSTORE_DB_TYPE,
+          database: eventstoreConfig.EVENTSTORE_DB_NAME,
+          ...(eventstoreConfig.EVENTSTORE_DB_HOST && {
+            host: eventstoreConfig.EVENTSTORE_DB_HOST,
           }),
-          ...(eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_PORT && {
-            port: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_PORT,
+          ...(eventstoreConfig.EVENTSTORE_DB_PORT && {
+            port: eventstoreConfig.EVENTSTORE_DB_PORT,
           }),
-          ...(eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_USERNAME && {
-            username: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_USERNAME,
+          ...(eventstoreConfig.EVENTSTORE_DB_USERNAME && {
+            username: eventstoreConfig.EVENTSTORE_DB_USERNAME,
           }),
-          ...(eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_PASSWORD && {
-            password: eventstoreConfig.EVM_CRAWLER_EVENTSTORE_DB_PASSWORD,
+          ...(eventstoreConfig.EVENTSTORE_DB_PASSWORD && {
+            password: eventstoreConfig.EVENTSTORE_DB_PASSWORD,
           }),
         }),
         BlocksQueueModule.forRootAsync({
           blocksCommandExecutor: NetworkCommandFactoryService,
-          maxBlockHeight: businessConfig.EVM_CRAWLER_MAX_BLOCK_HEIGHT,
-          queueLoaderStrategyName: blocksQueueConfig.EVM_CRAWLER_BLOCKS_QUEUE_LOADER_STRATEGY_NAME,
-          basePreloadCount: blocksQueueConfig.EVM_CRAWLER_BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT,
-          blockSize: businessConfig.EVM_CRAWLER_NETWORK_MAX_BLOCK_WEIGHT,
+          maxBlockHeight: businessConfig.MAX_BLOCK_HEIGHT,
+          queueLoaderStrategyName: blocksQueueConfig.BLOCKS_QUEUE_LOADER_STRATEGY_NAME,
+          basePreloadCount: blocksQueueConfig.BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT,
+          blockSize: businessConfig.NETWORK_MAX_BLOCK_WEIGHT,
           queueLoaderRequestBlocksBatchSize,
           queueIteratorBlocksBatchSize,
           maxQueueSize,
@@ -204,6 +206,7 @@ export class AppModule {
         ...QueryHandlers,
         ...UserQueryHandlers,
         ...UserEventHandlers,
+        ...Providers,
       ],
       exports: [],
     };

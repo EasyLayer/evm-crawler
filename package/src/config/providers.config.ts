@@ -10,7 +10,7 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'HTTP URL of the EVM-like network provider node',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_NODE_HTTP_URL!: string;
+  NETWORK_PROVIDER_NODE_HTTP_URL!: string;
 
   @Transform(({ value }) => (value ? value : ''))
   @IsOptional()
@@ -18,14 +18,14 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'WS URL of the EVM-like network provider node',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_NODE_WS_URL?: string;
+  NETWORK_PROVIDER_NODE_WS_URL?: string;
 
   @Transform(({ value }) => (value ? value : 'ethersjs'))
   @IsString()
   @JSONSchema({
     description: 'Type of the network provider',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_TYPE: string = 'ethersjs';
+  NETWORK_PROVIDER_TYPE: string = 'ethersjs';
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
@@ -35,7 +35,7 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'Request timeout in milliseconds',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_REQUEST_TIMEOUT: number = 5000;
+  NETWORK_PROVIDER_REQUEST_TIMEOUT: number = 5000;
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
@@ -45,7 +45,7 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'Maximum concurrent requests',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS: number = 1;
+  NETWORK_PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS: number = 1;
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
@@ -55,7 +55,7 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'Maximum batch size for parallel requests',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE: number = 1000;
+  NETWORK_PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE: number = 1000;
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
@@ -65,5 +65,5 @@ export class ProvidersConfig {
   @JSONSchema({
     description: 'Delay between batches in milliseconds',
   })
-  EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS: number = 100;
+  NETWORK_PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS: number = 100;
 }
