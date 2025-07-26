@@ -17,12 +17,12 @@ export class BlocksQueueConfig {
     default: BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER,
     enum: Object.values(BlocksQueueStrategy),
   })
-  EVM_CRAWLER_BLOCKS_QUEUE_LOADER_STRATEGY_NAME: BlocksQueueStrategy = BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER;
+  BLOCKS_QUEUE_LOADER_STRATEGY_NAME: BlocksQueueStrategy = BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER;
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
     return n === 0 ? 0 : n || 1;
   })
   @IsNumber()
-  EVM_CRAWLER_BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 1;
+  BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 1;
 }

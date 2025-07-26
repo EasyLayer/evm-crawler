@@ -9,7 +9,7 @@ import BlockModel, { AGGREGATE_ID } from './blocks.model';
 import type { NetworkEventStoreRecord, BlocksEventStoreRecord } from './mocks';
 import { networkTableSQL, blocksTableSQL, mockNetworks, mockBlockModel, mockBlocks } from './mocks';
 
-// IMPORTANT: We set EVM_CRAWLER_MAX_BLOCK_HEIGHT=2 and add blocks up to this height to the database
+// IMPORTANT: We set MAX_BLOCK_HEIGHT=2 and add blocks up to this height to the database
 // so that the application will spin but not get new blocks.
 
 describe('/Evm Crawler: HTTP Transport Checks', () => {

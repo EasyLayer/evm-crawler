@@ -5,7 +5,6 @@ import { bootstrap } from '@easylayer/evm-crawler';
 import { EvmNetworkInitializedEvent } from '@easylayer/evm';
 import { SQLiteService } from '../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../+helpers/clean-data-folder';
-import BlocksModel from '../first-init-flow/blocks.model';
 import type { NetworkRecord } from './mocks';
 import { networkTableSQL, mockNetworks } from './mocks';
 
@@ -55,7 +54,6 @@ describe('/Evm Crawler: Second Initializaton Flow', () => {
     await dbService.close();
 
     app = await bootstrap({
-      Models: [BlocksModel],
       testing: {
         handlerEventsToWait: [
           {
