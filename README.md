@@ -39,12 +39,12 @@
 |---------------------|---------------------------------------------------------------------|
 | 📦 `package/`       | Source code of the SDK                                              |
 | 🚀 `examples/`      | Apps examples                                                |
-| 🧪 `e2e-tests/`     | End-to-end test suites                                              |
+| 🧪 `e2e-tests-server/`     | End-to-end test suites                                              |
 | 🔌 `integration-tests/` | Integration test suites                                     |
 
 ## Developer Setup
 
-> <b>Node.js version:</b> 17 or higher is required. We recommend using the latest LTS (currently 22+).<br>
+> <b>Node.js version:</b> 20 or higher is required. We recommend using the latest LTS (currently 22+).<br>
 > <b>Yarn version:</b> 4.5+ is required (Yarn Berry).  
 > Yarn is included in the repository under <code>.yarn/releases/</code>, so you do not need to install it globally.  
 > You can run all commands using <code>yarn</code> if you have Yarn 4+ or Corepack enabled, or use <code>node .yarn/releases/yarn-4.5.0.cjs &lt;command&gt;</code> directly.

@@ -4,7 +4,7 @@
       {
           "name": "Debug E2E Tests",
           "type": "node",
-          "runtimeVersion": "18.18.2",
+          "runtimeVersion": "20.18.1",
           "request": "launch",
           "runtimeArgs": [
             "--inspect-brk"
@@ -30,7 +30,7 @@
       {
         "name": "Debug Integration Tests",
         "type": "node",
-        "runtimeVersion": "18.18.2",
+        "runtimeVersion": "20.18.1",
         "request": "launch",
         "runtimeArgs": [
           "--inspect-brk"
@@ -52,25 +52,6 @@
         "windows": {
           "program": "${workspaceFolder}/node_modules/jest/bin/jest"
         }
-      },
-      {
-        "name": "Debug Gas Price Monitoring",
-        "type": "node",
-        "runtimeVersion": "18.18.2",
-        "request": "launch",
-        "runtimeArgs": [
-          "--inspect-brk",
-          "-r",
-          "ts-node/register"
-        ],
-        "cwd": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring",
-        "program": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/src/main.ts",
-        "envFile": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/.env",
-        "console": "integratedTerminal",
-        "internalConsoleOptions": "neverOpen",
-        "env": {
-          "TS_NODE_PROJECT": "${workspaceFolder}/examples/real-time-data/gas-price-monitoring/tsconfig.json"
-        },
       }
     ]
 }
