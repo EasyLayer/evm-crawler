@@ -1,11 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { CommandBus } from '@easylayer/common/cqrs';
-import {
-  InitMempoolCommand,
-  RefreshMempoolCommand,
-  RemoveConfirmedMempoolTxsCommand,
-  SyncMempoolCommand,
-} from '@easylayer/evm';
+import { InitMempoolCommand, RefreshMempoolCommand, SyncMempoolCommand } from '@easylayer/evm';
 import type { MempoolCommandExecutor, MempoolSnapshot } from '@easylayer/evm';
 
 @Injectable()
@@ -35,17 +30,5 @@ export class MempoolCommandFactoryService implements MempoolCommandExecutor {
 
   async sync({ requestId }: { requestId: string }): Promise<void> {
     await this.commandBus.execute(new SyncMempoolCommand({ requestId }));
-  }
-
-  async removeConfirmedTxs({
-    requestId,
-    hashes,
-    height,
-  }: {
-    requestId: string;
-    hashes: string[];
-    height: number;
-  }): Promise<void> {
-    await this.commandBus.execute(new RemoveConfirmedMempoolTxsCommand({ requestId, hashes, height }));
   }
 }

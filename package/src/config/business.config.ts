@@ -183,6 +183,14 @@ export class BusinessConfig {
   @IsBoolean()
   @IsOptional()
   @JSONSchema({
+    description: 'Enable transactionsRoot/receiptsRoot verification for loaded blocks. Disabled by default.',
+  })
+  NETWORK_VERIFY_TRIE: boolean = false;
+
+  @Transform(({ value }) => parseBoolean(value, false))
+  @IsBoolean()
+  @IsOptional()
+  @JSONSchema({
     description: 'Load trace data for each block. Provider must support trace APIs; otherwise startup/load must fail.',
   })
   TRACES_ENABLED: boolean = false;

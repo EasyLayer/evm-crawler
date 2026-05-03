@@ -35,4 +35,19 @@ describe('BusinessConfig', () => {
     expect(network.maxBlobGasPerBlock).toBe(786_432);
     expect(network.targetBlobGasPerBlock).toBe(393_216);
   });
+
+  it('keeps verifyTrie defaulted to false and independent from traces flags', () => {
+    const config = new BusinessConfig();
+
+    expect(config.NETWORK_VERIFY_TRIE).toBe(false);
+    expect(config.TRACES_ENABLED).toBe(false);
+
+    config.NETWORK_VERIFY_TRIE = true;
+    expect(config.NETWORK_VERIFY_TRIE).toBe(true);
+    expect(config.TRACES_ENABLED).toBe(false);
+
+    config.TRACES_ENABLED = true;
+    expect(config.NETWORK_VERIFY_TRIE).toBe(true);
+    expect(config.TRACES_ENABLED).toBe(true);
+  });
 });

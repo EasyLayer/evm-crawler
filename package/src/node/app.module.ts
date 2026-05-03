@@ -138,6 +138,7 @@ export class AppModule {
           maxQueueSize,
           blockTimeMs: businessConfig.NETWORK_TARGET_BLOCK_TIME_MS,
           tracesEnabled: businessConfig.TRACES_ENABLED,
+          verifyTrie: businessConfig.NETWORK_VERIFY_TRIE,
         }),
       ],
       providers: [

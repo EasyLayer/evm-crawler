@@ -1,17 +1,21 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@easylayer/common/cqrs';
 import { EventStoreWriteService } from '@easylayer/common/eventstore';
-import { v4 as uuidv4 } from 'uuid';
 import {
   AddBlocksBatchCommand,
   BlockchainProviderService,
   BlockchainValidationError,
   type Block,
   type LightBlock,
+  type Mempool,
 } from '@easylayer/evm';
-import { MempoolReadService, NetworkModelFactoryService, NetworkReadService } from '../services';
+import {
+  MempoolModelFactoryService,
+  MempoolReadService,
+  NetworkModelFactoryService,
+  NetworkReadService,
+} from '../services';
 import { ModelFactoryService, Model, NormalizedModelCtor, ProcessBlockExecutionContext } from '../framework';
-import { MempoolCommandFactoryService } from '../../application-layer/services';
 
 export function deepFreeze<T>(obj: T): T {
   Object.getOwnPropertyNames(obj).forEach((name) => {
@@ -34,7 +38,7 @@ export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBa
     private readonly modelFactoryService: ModelFactoryService,
     private readonly networkReadService: NetworkReadService,
     private readonly mempoolReadService: MempoolReadService,
-    private readonly mempoolCommandFactory: MempoolCommandFactoryService
+    private readonly mempoolModelFactory: MempoolModelFactoryService
   ) {}
 
   async execute({ payload }: AddBlocksBatchCommand): Promise<void> {
@@ -77,20 +81,22 @@ export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBa
         for (const model of models) await model.processBlock(ctx);
       }
 
+      let mempoolModel: Mempool | undefined;
       if (this.blockchainProvider.isMempoolAvailable) {
         const confirmedHashes = batch.flatMap((b: Block) =>
           (b.transactions || []).map((tx: any) => tx.hash || tx).filter(Boolean)
         );
         if (confirmedHashes.length > 0) {
-          await this.mempoolCommandFactory.removeConfirmedTxs({
-            requestId: uuidv4(),
+          mempoolModel = await this.mempoolModelFactory.initModel();
+          await mempoolModel.removeConfirmed({
+            requestId,
             hashes: confirmedHashes,
             height: batch[batch.length - 1]!.blockNumber,
           });
         }
       }
 
-      await this.eventStore.save([...models, networkModel]);
+      await this.eventStore.save(mempoolModel ? [...models, networkModel, mempoolModel] : [...models, networkModel]);
       this.logger.verbose('Blocks saved into eventstore');
     } catch (error) {
       if (error instanceof BlockchainValidationError) {
