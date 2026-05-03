@@ -1,7 +1,10 @@
 import type { Model, ZeroArgModelCtor } from '@easylayer/common/framework';
 import type { AggregateOptions } from '@easylayer/common/cqrs';
+import type { Walker } from '../walker';
 import { StateModel } from './state-model';
 import type { ProcessBlockExecutionContext, MempoolTickExecutionContext } from '../types';
+
+export type { Walker };
 
 export type CompiledModelClass<State, T extends Model = Model> = ZeroArgModelCtor<T & { state: State }>;
 
@@ -10,8 +13,6 @@ export type ReducersMap<State> = Record<string, ReducerFn<State, any>>;
 
 export type SelectorFn<State, R = any> = (state: Readonly<State>, ...args: any[]) => R;
 export type SelectorsMap<State> = Record<string, SelectorFn<State, any>>;
-
-export type Walker = (from: string, source: any, fn: (ctx: any) => void | Promise<void>) => Promise<void>;
 
 /** Per-block accumulator (not persisted). */
 export type Locals = {

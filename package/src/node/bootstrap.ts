@@ -2,13 +2,13 @@ import 'reflect-metadata';
 import 'dotenv/config';
 import '../utils'; // check-node-version (Node only)
 import { NestFactory } from '@nestjs/core';
-import type { INestApplication, INestApplicationContext } from '@nestjs/common';
+import type { INestApplicationContext } from '@nestjs/common';
 import { NestLogger } from '@easylayer/common/logger';
 import { ContainerModule } from './container.module';
 import type { ContainerModuleOptions } from './container.module';
 import { AppService } from '../app.service';
 import { ModelFactoryService } from '../domain-layer/framework';
-import { setupTestEventSubscribers, type TestingOptions } from '../utils/testing-helpers';
+import { setupTestEventSubscribers, type TestingOptions } from '../utils';
 
 type BootstrapOptions = Omit<ContainerModuleOptions, 'appName'> & { testing?: TestingOptions };
 
@@ -19,7 +19,7 @@ export const bootstrap = async ({
   Providers,
   testing = {},
   config = {},
-}: BootstrapOptions): Promise<INestApplicationContext | INestApplication> => {
+}: BootstrapOptions): Promise<INestApplicationContext> => {
   const appName = process.env.APPLICATION_NAME || 'evm';
   const isTest = process.env.NODE_ENV === 'test';
 
@@ -56,8 +56,8 @@ export const bootstrap = async ({
 
     await appContext.init();
 
-    // After init, the DI container has all services. Populate the services ref
-    // so that factory query handlers can access ModelFactoryService at execute() time.
+    // After init, populate the services ref so factory query handlers
+    // can access ModelFactoryService at execute() time.
     const servicesRef = appContext.get<{ value?: any }>('QUERY_FACTORY_SERVICES_REF', { strict: false });
     if (servicesRef) {
       const modelFactory = appContext.get(ModelFactoryService, { strict: false });
@@ -77,8 +77,8 @@ export const bootstrap = async ({
 
     return appContext;
   } catch (err) {
-    const trace = err instanceof Error ? err.stack : undefined;
     const msg = err instanceof Error ? err.message : String(err);
+    const trace = err instanceof Error ? err.stack : undefined;
     logger.error(`Bootstrap failed: ${msg}`, trace, 'Bootstrap');
     if (isTest) throw err;
     process.exit(1);

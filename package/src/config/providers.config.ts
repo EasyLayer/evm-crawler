@@ -77,10 +77,19 @@ export class ProvidersConfig {
   getNetworkConnections(): Array<{ httpUrl: string; wsUrl?: string }> {
     const httpUrls = this.PROVIDER_NETWORK_RPC_URLS || [];
     const wsUrls = this.PROVIDER_NETWORK_WS_URLS || [];
-    // Pair http and ws urls by index
+
+    // WS URL requires a paired RPC URL at the same index — WS cannot fetch
+    // blocks/receipts independently, it only subscribes to new block events.
+    if (wsUrls.length > 0 && httpUrls.length === 0) {
+      throw new Error(
+        'PROVIDER_NETWORK_WS_URLS requires at least one PROVIDER_NETWORK_RPC_URLS. ' +
+          'WS is used for real-time block notifications; RPC is required for block/receipt fetching.'
+      );
+    }
+
     return httpUrls.map((httpUrl, i) => ({
       httpUrl,
-      wsUrl: wsUrls[i],
+      wsUrl: wsUrls[i], // undefined if no WS url at this index
     }));
   }
 

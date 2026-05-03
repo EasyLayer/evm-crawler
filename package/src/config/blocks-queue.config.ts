@@ -1,21 +1,25 @@
-import { Injectable } from '@nestjs/common';
 import { Transform } from 'class-transformer';
 import { IsString, IsNumber } from 'class-validator';
 import { JSONSchema } from 'class-validator-jsonschema';
 
-@Injectable()
 export class BlocksQueueConfig {
-  @Transform(({ value }) => value || 'pull-rpc')
+  @Transform(({ value }) => (value?.length ? value : 'rpc'))
   @IsString()
-  @JSONSchema({ description: 'Block loading strategy: pull-rpc | subscribe-ws', enum: ['pull-rpc', 'subscribe-ws'] })
-  BLOCKS_QUEUE_LOADER_STRATEGY_NAME: 'pull-rpc' | 'subscribe-ws' = 'pull-rpc';
+  @JSONSchema({
+    description: 'Block loading strategy: rpc | subscribe-ws',
+    enum: ['rpc', 'subscribe-ws'],
+  })
+  BLOCKS_QUEUE_LOADER_STRATEGY_NAME: 'rpc' | 'subscribe-ws' = 'rpc';
 
-  @Transform(({ value }) => parseInt(value, 10) || 10)
+  @Transform(({ value }) => {
+    const n = parseInt(value, 10);
+    return n === 0 ? 0 : n || 1;
+  })
   @IsNumber()
   @JSONSchema({ description: 'Base number of blocks to preload in parallel.' })
-  BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 10;
+  BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 1;
 
-  @Transform(({ value }) => value || 'subscribe-ws')
+  @Transform(({ value }) => (value?.length ? value : 'subscribe-ws'))
   @IsString()
   @JSONSchema({
     description: 'Mempool loading strategy: subscribe-ws | txpool-content',

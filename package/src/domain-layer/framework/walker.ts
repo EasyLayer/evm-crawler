@@ -1,61 +1,27 @@
-import type { Walker } from './declarative';
+export type Walker = (from: string, source: any, fn: (ctx: any) => void | Promise<void>) => Promise<void>;
 
 export const walkEVM: Walker = async (from, source, fn) => {
   if (!source) return;
-
   switch (from) {
-    case 'block': {
-      await fn({ block: source });
+    case 'block':
+      return fn({ block: source });
+    case 'block.transactions':
+      for (const tx of source.transactions ?? []) await fn({ block: source, tx });
       return;
-    }
-
-    case 'block.transactions': {
-      const block: any = source;
-      for (const tx of block.transactions ?? []) await fn({ block, tx });
+    case 'block.receipts':
+      for (const receipt of source.receipts ?? []) await fn({ block: source, receipt });
       return;
-    }
-
-    case 'block.receipts': {
-      const block: any = source;
-      for (const receipt of block.receipts ?? []) await fn({ block, receipt });
+    case 'block.receipts.logs':
+      for (const receipt of source.receipts ?? [])
+        for (const log of receipt.logs ?? []) await fn({ block: source, receipt, log });
       return;
-    }
-
-    case 'block.receipts.logs': {
-      const block: any = source;
-      for (const receipt of block.receipts ?? []) {
-        for (const log of receipt.logs ?? []) await fn({ block, receipt, log });
-      }
+    case 'block.traces':
+      for (const trace of source.traces ?? []) await fn({ block: source, trace });
       return;
-    }
-
-    case 'block.traces': {
-      const block: any = source;
-      for (const trace of block.traces ?? []) await fn({ block, trace });
-      return;
-    }
-
-    // ── Mempool ──────────────────────────────────────────────────────────
-
-    case 'mempool': {
-      await fn({ mempool: source });
-      return;
-    }
-
-    case 'mempool.tx': {
-      const mempool: any = source;
-      if (Array.isArray(mempool?.tx)) {
-        for (const tx of mempool.tx) await fn({ mempool, tx });
-        return;
-      }
-      if (typeof mempool?.forEachLoadedTx === 'function') {
-        await mempool.forEachLoadedTx(async (tx: any) => fn({ mempool, tx }));
-        return;
-      }
-      throw new Error('mempool.tx: unsupported mempool source');
-    }
-
-    default:
+    case 'mempool':
+      return fn({ mempool: source });
+    case 'mempool.tx':
+      if (Array.isArray(source?.tx)) for (const tx of source.tx) await fn({ mempool: source, tx });
       return;
   }
 };

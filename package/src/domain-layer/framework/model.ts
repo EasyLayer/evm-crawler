@@ -4,10 +4,6 @@ import type { ProcessBlockExecutionContext, MempoolTickExecutionContext } from '
 
 export type ZeroArgModelCtor<T extends Model = Model> = new () => T;
 
-/**
- * Base EVM model — mirrors bitcoin Model exactly.
- * aggregateId taken from static modelId (fallback: class name).
- */
 export abstract class Model extends FrameworkModel {
   static modelId: string;
   static aggregateOptionsOverride?: Partial<AggregateOptions>;

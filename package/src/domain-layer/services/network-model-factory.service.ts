@@ -4,7 +4,7 @@ import { Network } from '@easylayer/evm';
 import type { LightBlock } from '@easylayer/evm';
 import { BlocksQueueConfig } from '../../config';
 
-export const NETWORK_AGGREGATE_ID = 'evm-network';
+export const NETWORK_AGGREGATE_ID = 'network';
 
 @Injectable()
 export class NetworkModelFactoryService {

@@ -13,7 +13,8 @@ export class SyncMempoolCommandHandler implements ICommandHandler<SyncMempoolCom
 
   constructor(
     private readonly eventStore: EventStoreWriteService,
-    @Inject('FrameworkModelsConstructors') private readonly Models: NormalizedModelCtor[],
+    @Inject('FrameworkModelsConstructors')
+    private Models: NormalizedModelCtor[],
     private readonly modelFactoryService: ModelFactoryService,
     private readonly mempoolModelFactory: MempoolModelFactoryService,
     private readonly blockchainProvider: BlockchainProviderService,
@@ -27,8 +28,8 @@ export class SyncMempoolCommandHandler implements ICommandHandler<SyncMempoolCom
     const mempoolModel = await this.mempoolModelFactory.initModel();
 
     const models: Model[] = [];
-    for (const M of this.Models) {
-      models.push(await this.modelFactoryService.restoreByCtor(M));
+    for (const m of this.Models) {
+      models.push(await this.modelFactoryService.restoreByCtor(m));
     }
 
     try {
@@ -44,14 +45,14 @@ export class SyncMempoolCommandHandler implements ICommandHandler<SyncMempoolCom
         },
       };
 
-      for (const model of models) {
-        await model.mempoolTick?.(ctx);
+      for (const m of models) {
+        await m.mempoolTick?.(ctx);
       }
 
       await this.eventStore.save([...models, mempoolModel]);
-      this.logger.verbose('Mempool synced into eventstore');
+      this.logger.verbose('Mempool saved into eventstore');
     } catch (error) {
-      this.logger.warn('Error syncing Mempool', { args: { message: (error as any)?.message } });
+      this.logger.warn('Error while syncing mempool', { args: { message: (error as any)?.message } });
       throw error;
     }
   }

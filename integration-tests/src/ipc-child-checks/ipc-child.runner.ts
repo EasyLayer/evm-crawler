@@ -1,7 +1,7 @@
 import { bootstrap } from '@easylayer/evm-crawler/node';
 import { BlockchainProviderService } from '@easylayer/evm';
 import BlocksModel from './blocks.model';
-import { mockBlocks } from '../../../e2e-tests-server/src/+fixtures/evm-blocks';
+import { mockBlocks } from './mocks';
 
 // Patch provider methods directly on prototype — jest.spyOn is not available in child process
 BlockchainProviderService.prototype.getCurrentBlockHeightFromNetwork = async function () {
@@ -42,6 +42,10 @@ BlockchainProviderService.prototype.getManyBlocksStatsByHeights = async function
       unclesCount: (blk as any).uncles?.length ?? 0,
     };
   });
+};
+
+BlockchainProviderService.prototype.getOneBlockByHeight = async function (height: string | number) {
+  return mockBlocks.find((b: any) => b.blockNumber === Number(height)) ?? null;
 };
 
 (async () => {

@@ -1,20 +1,17 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { CommandBus } from '@easylayer/common/cqrs';
 import { AddBlocksBatchCommand, InitNetworkCommand } from '@easylayer/evm';
-import type { Block, BlocksCommandExecutor } from '@easylayer/evm';
+import type { BlocksCommandExecutor } from '@easylayer/evm';
 
 @Injectable()
 export class NetworkCommandFactoryService implements BlocksCommandExecutor {
-  private readonly log = new Logger(NetworkCommandFactoryService.name);
-
   constructor(private readonly commandBus: CommandBus) {}
 
-  async init({ requestId, indexedHeight = -1 }: { requestId: string; indexedHeight?: number }): Promise<void> {
-    this.log.verbose('Dispatching InitNetworkCommand', { args: { requestId, indexedHeight } });
-    await this.commandBus.execute(new InitNetworkCommand({ requestId, indexedHeight }));
+  public async init(dto: any): Promise<void> {
+    return await this.commandBus.execute(new InitNetworkCommand(dto));
   }
 
-  public async handleBatch(dto: { batch: Block[]; requestId: string }): Promise<void> {
+  public async handleBatch(dto: any): Promise<void> {
     await this.commandBus.execute(new AddBlocksBatchCommand({ ...dto }));
   }
 }

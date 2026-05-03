@@ -62,7 +62,7 @@ export const mockBlocks: Block[] = [
         logsBloom: '0x' + '0'.repeat(512),
         status: '0x1',
         type: '0x2',
-        effectiveGasPrice: '0x3b9aca00',
+        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
         logs: [
           {
             address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
@@ -139,7 +139,7 @@ export const mockBlocks: Block[] = [
         logsBloom: '0x' + '0'.repeat(512),
         status: '0x1',
         type: '0x2',
-        effectiveGasPrice: '0x3b9aca00',
+        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
         logs: [],
       },
     ],
@@ -200,7 +200,7 @@ export const mockBlocks: Block[] = [
         logsBloom: '0x' + '0'.repeat(512),
         status: '0x1',
         type: '0x2',
-        effectiveGasPrice: '0x3b9aca00',
+        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
         logs: [],
       },
     ],

@@ -3,7 +3,7 @@ import { EventStoreReadService } from '@easylayer/common/eventstore';
 import { Mempool } from '@easylayer/evm';
 import { BusinessConfig } from '../../config';
 
-export const MEMPOOL_AGGREGATE_ID = 'evm-mempool';
+export const MEMPOOL_AGGREGATE_ID = 'mempool';
 
 @Injectable()
 export class MempoolModelFactoryService {

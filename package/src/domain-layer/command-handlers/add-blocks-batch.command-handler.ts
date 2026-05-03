@@ -61,10 +61,10 @@ export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBa
       await networkModel.addBlocks({ requestId, blocks: lightBlocks, logger: this.logger });
 
       for (const block of batch) {
+        // traces is already part of block (block.traces), accessible inside processBlock via ctx.block.traces
         const frozen = deepFreeze(block);
         const ctx: ProcessBlockExecutionContext = {
           block: frozen,
-          traces: frozen.traces,
           network: this.networkReadService,
           mempool: this.mempoolReadService,
           services: {

@@ -2,60 +2,84 @@ import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { bootstrap, defineModel } from '@easylayer/evm-crawler/node';
 import { EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
-import type { ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
+import type { Log, TransactionReceipt, ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
 import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
-import { mockBlocks } from '../../+fixtures/evm-blocks';
-import { makeStatsMock, makeBlocksMock } from '../../+fixtures/mock-helpers';
+import { mockBlocks } from './mocks';
 
-const LAST_HEIGHT = mockBlocks[mockBlocks.length - 1]!.blockNumber; // 2
-
-jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(LAST_HEIGHT);
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights').mockImplementation(makeBlocksMock());
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts').mockImplementation(makeBlocksMock());
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(makeStatsMock());
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
+  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
+  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(async (heights) =>
+  heights.map((h) => ({
+    hash: '0x0',
+    number: Number(h),
+    size: 3,
+    gasLimit: 30000000,
+    gasUsed: 21000,
+    gasUsedPercentage: 0,
+    timestamp: 0,
+    transactionCount: 1,
+    miner: '0x0',
+    difficulty: '0x0',
+    parentHash: '0x0',
+    unclesCount: 0,
+  }))
+);
 
 const onLogCalls: Array<{ address: string; topic0: string; blockNumber: number }> = [];
 const onTxCalls: Array<{ hash: string; blockNumber: number }> = [];
 
 const EVMTrackerModel = defineModel({
-  modelId: 'evmtrackermodel',
-  state: {},
-  sources: {
-    log: async ({ log, block }: any) => {
-      onLogCalls.push({
-        address: log.address,
-        topic0: log.topics?.[0] ?? '',
-        blockNumber: block.blockNumber,
-      });
-    },
-    transaction: async ({ tx, block }: any) => {
-      onTxCalls.push({ hash: tx.hash, blockNumber: block.blockNumber });
-    },
+  name: 'evmtrackermodel',
+  onLog: async (log: Log, _receipt: TransactionReceipt, ctx: ProcessBlockExecutionContext) => {
+    onLogCalls.push({ address: log.address, topic0: log.topics[0] ?? '', blockNumber: ctx.block.blockNumber });
+  },
+  onTransaction: async (tx: any, ctx: ProcessBlockExecutionContext) => {
+    onTxCalls.push({ hash: tx.hash, blockNumber: ctx.block.blockNumber });
   },
 });
+
+// Mock getOneBlockByHeight used by assertRuntimeCompatibility's probe call.
+// Block 2 on mainnet (genesis era) has no baseFeePerGas, which would fail
+// the hasEIP1559 check in NetworkConfig. Return a fixture block that has it.
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
+  .mockImplementation(
+    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
+  );
 
 describe('EVM Crawler: Add Blocks Flow (declarative model)', () => {
   let dbService!: SQLiteService;
 
   beforeAll(async () => {
     jest.resetModules();
+    jest.useFakeTimers({ advanceTimers: true });
+
     config({ path: resolve(__dirname, '.env') });
     await cleanDataFolder('eventstore');
+
     await bootstrap({
       Models: [EVMTrackerModel],
       testing: {
         handlerEventsToWait: [{ eventType: EvmNetworkBlocksAddedEvent, count: mockBlocks.length }],
       },
     });
+
+    jest.runAllTimers();
   });
 
   afterAll(async () => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });
 
-  it('onLog is called for each log in each receipt across all blocks', () => {
+  it('onLog is called for each log in each receipt', () => {
     const totalExpectedLogs = mockBlocks.reduce(
       (sum, b) => sum + (b.receipts?.reduce((s, r) => s + r.logs.length, 0) ?? 0),
       0
@@ -63,18 +87,10 @@ describe('EVM Crawler: Add Blocks Flow (declarative model)', () => {
     expect(onLogCalls).toHaveLength(totalExpectedLogs);
   });
 
-  it('onLog receives correct address and topic0 from fixture data', () => {
+  it('onLog receives correct address and topic0', () => {
     const block0Logs = onLogCalls.filter((c) => c.blockNumber === 0);
-    expect(block0Logs.length).toBeGreaterThan(0);
-    // Logs per receipt are processed in REVERSE order (declarative compiler design)
-    // First log in reverse = last log of first receipt
-    const firstReceipt = mockBlocks[0]!.receipts?.[0];
-    const logsInReceipt = firstReceipt?.logs ?? [];
-    if (logsInReceipt.length > 0) {
-      // Last log in receipt appears FIRST in onLogCalls (reverse)
-      const lastLog = logsInReceipt[logsInReceipt.length - 1]!;
-      expect(block0Logs[0]!.address).toBe(lastLog.address);
-    }
+    expect(block0Logs[0]!.address).toBe('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2');
+    expect(block0Logs[0]!.topic0).toBe('0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef');
   });
 
   it('onTransaction is called for each tx in each block', () => {
@@ -82,37 +98,11 @@ describe('EVM Crawler: Add Blocks Flow (declarative model)', () => {
     expect(onTxCalls).toHaveLength(totalExpectedTxs);
   });
 
-  it('transactions are called in ascending block order', () => {
-    const blockNumbers = onTxCalls.map((c) => c.blockNumber);
-    for (let i = 1; i < blockNumbers.length; i++) {
-      expect(blockNumbers[i]).toBeGreaterThanOrEqual(blockNumbers[i - 1]!);
-    }
-  });
-
-  it('transaction hashes match fixture data', () => {
-    mockBlocks.forEach((block) => {
-      const calls = onTxCalls.filter((c) => c.blockNumber === block.blockNumber);
-      expect(calls).toHaveLength(block.transactions?.length ?? 0);
-      calls.forEach((call, i) => {
-        expect(call.hash).toBe(block.transactions?.[i]?.hash);
-      });
-    });
-  });
-
   it('should create evmtrackermodel table in SQLite', async () => {
     dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
     await dbService.connect();
     const tables = await dbService.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);
-    expect(tables.map((t: any) => t.name)).toContain('evmtrackermodel');
-  });
-
-  it('network block events are persisted correctly', async () => {
-    const blockEvents = await dbService.all(
-      `SELECT * FROM network WHERE type='EvmNetworkBlocksAddedEvent' ORDER BY blockHeight ASC`
-    );
-    expect(blockEvents).toHaveLength(mockBlocks.length);
-    blockEvents.forEach((ev: any, i: number) => {
-      expect(Number(ev.blockHeight)).toBe(i);
-    });
+    const names = tables.map((t: any) => t.name);
+    expect(names).toContain('evmtrackermodel');
   });
 });

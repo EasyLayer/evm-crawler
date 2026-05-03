@@ -1,6 +1,6 @@
 import { Module, DynamicModule } from '@nestjs/common';
 import { CqrsModule } from '@easylayer/common/cqrs';
-import type { IEventHandler } from '@easylayer/common/cqrs';
+import type { IQueryHandler, IEventHandler } from '@easylayer/common/cqrs';
 import { CommandHandlers } from '../domain-layer/command-handlers';
 import { EventsHandlers } from '../domain-layer/events-handlers';
 import { QueryHandlers } from '../domain-layer/query-handlers';
@@ -14,11 +14,6 @@ import {
 } from '../domain-layer/framework';
 
 export interface ContainerModuleOptions extends AppModuleOptions {
-  /**
-   * User query handlers — classic decorated classes OR factory objects.
-   * Factory objects: { queryName: string, handle: async (dto, services) => any }
-   * No decorators or emitDecoratorMetadata needed for factory objects.
-   */
   QueryHandlers?: QueryHandlerInput[];
   EventHandlers?: Array<new (...args: any[]) => IEventHandler>;
 }
@@ -37,7 +32,6 @@ export class ContainerModule {
 
     const { classHandlers, factories } = splitQueryHandlers(UserQueryHandlers);
 
-    // Mutable services ref — filled after appContext.init() in bootstrap.ts.
     const servicesRef: { value?: QueryFactoryServices } = {};
     const getServices = () => {
       if (!servicesRef.value) throw new Error('QueryFactory services not initialized yet');

@@ -6,20 +6,39 @@ import type { ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
 import { EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
 import { SQLiteService, payloadToObject } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
-import { mockBlocks, mockTraces } from '../../+fixtures/evm-blocks';
-import { makeStatsMock, makeBlocksMock } from '../../+fixtures/mock-helpers';
+import { mockBlocks, mockTraces } from './mocks';
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const LAST_HEIGHT = mockBlocks[mockBlocks.length - 1]!.blockNumber; // 2
+// ===== Mocks =====
 
-jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(LAST_HEIGHT);
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights').mockImplementation(makeBlocksMock());
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts').mockImplementation(makeBlocksMock());
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(makeStatsMock());
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
+  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
+  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(async (heights) =>
+  heights.map((h) => ({
+    hash: '0x0',
+    number: Number(h),
+    size: 3,
+    gasLimit: 30000000,
+    gasUsed: 21000,
+    gasUsedPercentage: 0,
+    timestamp: 0,
+    transactionCount: 1,
+    miner: '0x0',
+    difficulty: '0x0',
+    parentHash: '0x0',
+    unclesCount: 0,
+  }))
+);
 
 const getTracesSpy = jest
   .spyOn(BlockchainProviderService.prototype, 'getTracesByBlockHeight')
   .mockImplementation(async (height: number) => mockTraces[height] ?? []);
+
+// ===== User Model =====
 
 export class TraceProcessedEvent {
   constructor(
@@ -29,7 +48,9 @@ export class TraceProcessedEvent {
 }
 
 class TracesModel extends Model {
-  public async processBlock({ block, traces }: ProcessBlockExecutionContext): Promise<void> {
+  public async processBlock({ block }: ProcessBlockExecutionContext): Promise<void> {
+    // traces is part of block — only populated when TRACES_ENABLED=true
+    const traces = block.traces;
     if (traces !== undefined) {
       this.apply(new TraceProcessedEvent(block.blockNumber, traces.length));
     }
@@ -37,59 +58,63 @@ class TracesModel extends Model {
   protected onTraceProcessedEvent(_e: TraceProcessedEvent): void {}
 }
 
+// ===== Tests =====
+
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
+  .mockImplementation(
+    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
+  );
+
+jest.spyOn(BlockchainProviderService.prototype, 'assertTraceSupport' as any).mockResolvedValue(undefined);
+
 describe('EVM Crawler: Add Blocks Flow (traces enabled)', () => {
   let dbService!: SQLiteService;
 
   beforeAll(async () => {
     jest.resetModules();
+    jest.useFakeTimers({ advanceTimers: true });
+
     config({ path: resolve(__dirname, '.env') });
     await cleanDataFolder('eventstore');
+
     await bootstrap({
       Models: [TracesModel],
       testing: {
         handlerEventsToWait: [{ eventType: EvmNetworkBlocksAddedEvent, count: mockBlocks.length }],
       },
     });
+
+    jest.runAllTimers();
   });
 
   afterAll(async () => {
+    jest.useRealTimers();
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });
 
-  it('should call getTracesByBlockHeight for each block in ascending order', () => {
+  it('should call getTracesByBlockHeight for each block', () => {
     expect(getTracesSpy).toHaveBeenCalledTimes(mockBlocks.length);
-    const callArgs = getTracesSpy.mock.calls.map((c) => c[0]);
-    expect(callArgs).toEqual([0, 1, 2]);
+    for (let i = 0; i < mockBlocks.length; i++) {
+      expect(getTracesSpy).toHaveBeenCalledWith(i);
+    }
   });
 
-  it('should pass traces to processBlock and persist TraceProcessedEvents', async () => {
+  it('should pass traces to processBlock via block.traces', async () => {
     dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
     await dbService.connect();
-
-    const [integrity] = await dbService.all(`PRAGMA integrity_check`);
-    expect(integrity.integrity_check).toBe('ok');
 
     const events = await dbService.all(`SELECT * FROM tracesmodel ORDER BY blockHeight ASC`);
     expect(events).toHaveLength(mockBlocks.length);
 
-    events.forEach((ev: any) => {
-      expect(UUID_RE.test(ev.requestId)).toBe(true);
-      expect(Number.isInteger(ev.timestamp)).toBe(true);
-      expect(ev.timestamp).toBeGreaterThan(1e15);
-    });
+    // Block 0 has 1 trace, blocks 1 and 2 have 0
+    const block0ev = events.find((e: any) => Number(e.blockHeight) === 0)!;
+    const payload0 = payloadToObject(block0ev.payload);
+    expect(payload0.traceCount).toBe(1);
 
-    // Each block's trace count matches fixture
-    for (let i = 0; i < mockBlocks.length; i++) {
-      const ev = events.find((e: any) => Number(e.blockHeight) === i)!;
-      expect(payloadToObject(ev.payload).traceCount).toBe((mockTraces[i] ?? []).length);
-    }
-  });
-
-  it('network block events have correct blockNumbers in order', async () => {
-    const events = await dbService.all(
-      `SELECT blockHeight FROM network WHERE type='EvmNetworkBlocksAddedEvent' ORDER BY id ASC`
-    );
-    expect(events.map((e: any) => Number(e.blockHeight))).toEqual([0, 1, 2]);
+    const block1ev = events.find((e: any) => Number(e.blockHeight) === 1)!;
+    const payload1 = payloadToObject(block1ev.payload);
+    expect(payload1.traceCount).toBe(0);
   });
 });

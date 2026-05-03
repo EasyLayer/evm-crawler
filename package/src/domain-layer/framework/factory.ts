@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EventStoreReadService } from '@easylayer/common/eventstore';
-import { Model } from '../framework';
-import type { ZeroArgModelCtor } from '../framework';
+import type { Model, ZeroArgModelCtor } from './model';
 import { BusinessConfig } from '../../config';
 
 export interface IModelFactoryService {
@@ -18,7 +17,7 @@ export class ModelFactoryService implements IModelFactoryService {
   ) {}
 
   public createNewModel<T extends Model>(ModelCtor: ZeroArgModelCtor<T>): T {
-    return this.instantiateModel(ModelCtor);
+    return new ModelCtor();
   }
 
   public async restoreModel<T extends Model>(modelInstance: T): Promise<T> {
@@ -26,23 +25,7 @@ export class ModelFactoryService implements IModelFactoryService {
   }
 
   public async restoreByCtor<T extends Model>(ModelCtor: ZeroArgModelCtor<T>): Promise<T> {
-    const instance = this.instantiateModel(ModelCtor);
+    const instance = this.createNewModel(ModelCtor);
     return await this.restoreModel(instance);
-  }
-
-  private instantiateModel<T extends Model>(ModelCtor: ZeroArgModelCtor<T>): T {
-    try {
-      const instance = new ModelCtor();
-      const start = this.config.START_BLOCK_HEIGHT ?? 0;
-      const normalizedHeight = start - 1;
-      (instance as any)._lastBlockHeight = normalizedHeight;
-      return instance;
-    } catch (e) {
-      throw new Error(
-        `ModelFactoryService: Model "${ModelCtor.name}" must have a zero-args constructor. Error: ${
-          (e as Error)?.message ?? e
-        }`
-      );
-    }
   }
 }
