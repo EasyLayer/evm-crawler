@@ -4,8 +4,8 @@
   "private": true,
   "main": "dist/electron/main.js",
   "build": {
-    "appId": "com.easylayer.bitcoin-crawler",
-    "productName": "Bitcoin Crawler",
+    "appId": "com.easylayer.evm-crawler",
+    "productName": "EVM Crawler",
     "directories": {
       "output": "release"
     },

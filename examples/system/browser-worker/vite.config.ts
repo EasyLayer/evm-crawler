@@ -1,40 +1,12 @@
-import { defineConfig } from 'vite';
-
-/**
- * vite.config.ts — app bundle + dev/preview server
- *
- * src/app.ts → dist/assets/app-[hash].js
- *
- * Build order:
- *   yarn build:worker  → dist/worker.js
- *   yarn build:app     → dist/index.html + dist/assets/app.js
- *   yarn start         → yarn build && vite preview
- */
-export default defineConfig({
-  resolve: {
-    conditions: ['browser', 'module', 'default'],
-    mainFields: ['browser', 'module', 'main'],
-  },
-
-  build: {
-    outDir: 'dist',
-    emptyOutDir: false,
-    rollupOptions: {
-      input: 'index.html',
-    },
-  },
-
-  preview: {
-    port: 4173,
-  },
-
-  server: {
-    proxy: {
-      '/rpc': {
-        target: 'http://127.0.0.1:18332',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/rpc/, ''),
-      },
-    },
-  },
+import { defineConfig, loadEnv } from 'vite';
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+  const chainstackTarget = env.CHAINSTACK_RPC_TARGET || 'https://ethereum-mainnet.core.chainstack.com';
+  const chainstackUsername = env.CHAINSTACK_RPC_USERNAME || ''; const chainstackPassword = env.CHAINSTACK_RPC_PASSWORD || '';
+  return {
+    resolve: { conditions: ['browser', 'module', 'default'], mainFields: ['browser', 'module', 'main'] },
+    build: { outDir: 'dist', emptyOutDir: false, rollupOptions: { input: 'index.html' } },
+    preview: { port: 4173 },
+    server: { port: 4173, proxy: { '/rpc': { target: chainstackTarget, changeOrigin: true, rewrite: (path) => path.replace(/^\/rpc/, ''), ...(chainstackUsername && chainstackPassword ? { auth: `${chainstackUsername}:${chainstackPassword}` } : {}) } } },
+  };
 });

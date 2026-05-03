@@ -1,33 +1,26 @@
+import { config } from 'dotenv';
 import { bootstrap } from '@easylayer/evm-crawler';
-import { AddressUtxoWatcher } from './model';
-import {
-  GetBalanceQueryHandler
-} from './query';
+import { NativeBalanceWatcher } from './model';
+import { GetBalanceQueryHandler } from './query';
+
+config();
 
 bootstrap({
-  Models: [AddressUtxoWatcher],
-  QueryHandlers: [GetBalanceQueryHandler]
+  Models: [NativeBalanceWatcher],
+  QueryHandlers: [GetBalanceQueryHandler],
 })
   .then(() => {
-    console.log('\n🚀 EVM Address UTXOx Watcher Started!\n');    
-    console.log('🔧 Default Framework Queries:');
-
-    console.log('💡 Example with curl:');
-
-    console.log('curl -X POST http://localhost:3000/query \\');
-    console.log(' -H "Content-Type: application/json" \\');
-    console.log(' -d \'{"name":"GetModelsQuery","dto":{"modelIds":["my-model-name"],"filter":{"blockHeight":100}}}\'\n');
-
-    console.log('curl -X POST http://localhost:3000/query \\');
-    console.log(' -H "Content-Type: application/json" \\');
-    console.log(' -d \'{"name":"FetchEventsQuery","dto":{"modelIds":["my-model-name"],"filter":{},"paging":{"limit":10}}}\'\n');
-
-    console.log('curl -X POST http://localhost:3000/query \\');
-    console.log(' -H "Content-Type: application/json" \\');
-    console.log(' -d \'{"name":"GetBalanceQuery","dto":{"addresses":["bc1qexampleaddr1...","bc1qexampleaddr2..."]}}}\'\n');
-
-    console.log('═══════════════════════════════════════════════════════════════\n');
+    console.log('\n🚀 EVM Native Balance Watcher started.\n');
+    console.log('Tracked addresses come from WATCH_ADDRESSES.');
+    console.log('Balances are stored in wei as decimal strings.');
+    console.log('\nExample queries:');
+    console.log(`curl -X POST http://localhost:3000/query \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"GetBalanceQuery","dto":{"addresses":[]}}'\n`);
+    console.log(`curl -X POST http://localhost:3000/query \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"FetchEventsQuery","dto":{"modelIds":["native-balance-watcher"],"filter":{},"paging":{"limit":10}}}'\n`);
   })
   .catch((error: Error) => {
-    console.error('❌ Failed to start EVM Address UTXOx Watcher:', error);
+    console.error('❌ Failed to start EVM Native Balance Watcher:', error);
   });

@@ -2,16 +2,17 @@
   "name": "postgres",
   "private": true,
   "version": "0.0.3",
-  "description": "This is an example app for development",
+  "description": "EVM native balance watcher example",
   "type": "commonjs",
   "scripts": {
-    "clear": "yarn clear cache && clear:node_modules",
-    "clear:node_modules": "rimraf node_module",
-    "start": "node --inspect -r ts-node/register src/main.ts"
+    "clear": "yarn clear:node_modules",
+    "clear:node_modules": "rimraf node_modules",
+    "start": "node -r ts-node/register src/main.ts"
   },
   "dependencies": {
     "@easylayer/common": "1.2.1",
     "@easylayer/evm-crawler": "0.0.3",
+    "dotenv": "16.4.5",
     "uuid": "9.0.1"
   },
   "devDependencies": {

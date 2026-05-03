@@ -1,122 +1,64 @@
 import { Model } from '@easylayer/evm-crawler';
-import { ScriptUtilService, type Block, type NetworkConfig } from '@easylayer/bitcoin';
-import { Money, type Currency } from '@easylayer/common/arithmetic';
+import type { ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
 
-const CURRENCY: Currency = { code: 'BTC', minorUnit: 8 };
-const ADDRESSES = ['1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa'];
+const DEFAULT_WATCH_ADDRESSES = ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'];
 
+export interface NativeBalanceSnapshot { address: string; balanceWei: string; }
 
-type Utxo = { txid: string; n: number; value: string }; // value: satoshi (string)
-type UtxoKey = `${string}_${number}`;
-type OutputHit = { address: string; txid: string; n: number; value: string };
-type InputRef  = { txid: string; n: number };
+export class NativeBalanceWatcher extends Model {
+  static override modelId = 'native-balance-watcher';
+  private readonly wallets = new Set(readWatchAddresses());
+  private readonly balances = new Map<string, string>();
 
-export class AddressUtxoWatcher extends Model {
-  static override modelId: string = 'my-model-name';
-
-  private readonly wallets: ReadonlySet<string> = new Set(ADDRESSES);
-  // unspent[address] -> UTXO[]
-  public unspent = new Map<string, Utxo[]>();
-
-  public async processBlock(
-    ctx: any & { block: Block; networkConfig?: NetworkConfig }
-  ): Promise<void> {
-    const block = ctx.block; if (!block) return;
-    const { tx = [], height } = block;
-    const net = (ctx as any).networkConfig?.network as NetworkConfig['network'] | undefined;
-
-    const outputs: OutputHit[] = [];
-    const inputs: InputRef[] = [];
-
-    // Unique duplicates within one block
-    const seenOut = new Set<UtxoKey>();
-    const seenIn  = new Set<UtxoKey>();
-
-    for (const t of tx) {
-      const { txid, vout = [], vin = [] } = t;
-
-      for (const o of vout) {
-        const addr = this.extractAddressFromVout(o, net);
-        if (!addr || !this.wallets.has(addr)) continue;
-
-        const key: UtxoKey = `${txid}_${o.n}`;
-        if (seenOut.has(key)) continue;
-        seenOut.add(key);
-
-        const sat = Money.fromDecimal(o.value.toString(), CURRENCY).toCents().toString();
-        outputs.push({ address: addr, txid, n: o.n, value: sat });
-      }
-
-      for (const i of vin) {
-        if (i.coinbase) continue;
-        if (i.txid === undefined || i.vout === undefined) continue;
-
-        const key: UtxoKey = `${i.txid}_${i.vout}`;
-        if (seenIn.has(key)) continue;
-        seenIn.add(key);
-
-        inputs.push({ txid: i.txid, n: i.vout });
-      }
-    }
-
-    if (outputs.length || inputs.length) {
-      this.applyEvent('BasicWalletDelta', height, { outputs, inputs });
-    }
+  public async processBlock(ctx: ProcessBlockExecutionContext): Promise<void> {
+    if (!this.wallets.size) return;
+    const balances = await loadBalancesAtBlock(ctx, this.wallets);
+    this.applyEvent('NativeBalanceSnapshotCaptured', ctx.block.blockNumber, { blockHash: ctx.block.hash, balances });
   }
 
-  protected onBasicWalletDelta(e: any): void {
-    const { outputs, inputs } = e.payload as { outputs: OutputHit[]; inputs: InputRef[] };
-
-    for (const out of outputs) {
-      const list = this.unspent.get(out.address) ?? [];
-      const exists = list.some(u => u.txid === out.txid && u.n === out.n);
-      if (!exists) {
-        list.push({ txid: out.txid, n: out.n, value: out.value });
-        this.unspent.set(out.address, list);
-      }
-    }
-
-    if (inputs.length) {
-      for (const [addr, list] of this.unspent) {
-        let changed = false;
-        for (let i = list.length - 1; i >= 0; i--) {
-          const u = list[i];
-          const spent = inputs.some(inp => inp.txid === u.txid && inp.n === u.n);
-          if (spent) { list.splice(i, 1); changed = true; }
-        }
-        if (changed) {
-          list.length ? this.unspent.set(addr, list) : this.unspent.delete(addr);
-        }
-      }
-    }
+  protected onNativeBalanceSnapshotCaptured(event: any): void {
+    const payload = event.payload as { balances?: NativeBalanceSnapshot[] };
+    for (const item of payload.balances ?? []) this.balances.set(normalizeAddress(item.address), item.balanceWei);
   }
 
-  public getBalance(address: string): string {
-    const list = this.unspent.get(address);
-    if (!list || !list.length) return '0';
-    let sum = 0n;
-    for (const u of list) sum += BigInt(u.value);
-    return sum.toString();
-  }
-
+  public getBalance(address: string): string { return this.balances.get(normalizeAddress(address)) ?? '0'; }
   public getAllBalances(): Record<string, string> {
-    const res: Record<string, string> = {};
-    for (const [addr, list] of this.unspent) {
-      let sum = 0n;
-      for (const u of list) sum += BigInt(u.value);
-      res[addr] = sum.toString();
-    }
-    for (const a of this.wallets) if (!(a in res)) res[a] = '0';
-    return res;
-  }
-
-  private extractAddressFromVout(vout: any, net?: NetworkConfig['network']): string | undefined {
-    try {
-      if (vout.scriptPubKey?.addresses?.length) return vout.scriptPubKey.addresses[0];
-      if (vout.scriptPubKey?.hex && net) {
-        return ScriptUtilService.getScriptHashFromScriptPubKey(vout.scriptPubKey, net) || undefined;
-      }
-      return undefined;
-    } catch { return undefined; }
+    const result: Record<string, string> = {};
+    for (const address of this.wallets) result[address] = this.balances.get(address) ?? '0';
+    return result;
   }
 }
+
+export async function loadBalancesAtBlock(ctx: { block: { blockNumber: number }; services: any }, addresses: Iterable<string>): Promise<NativeBalanceSnapshot[]> {
+  const provider = await ctx.services?.nodeProvider?.connectionManager?.getActiveProvider?.();
+  const httpClient = provider?.httpClient;
+  if (!httpClient) throw new Error('Active EVM HTTP provider is not available in processBlock context');
+  const blockTag = ctx.block.blockNumber;
+  const result: NativeBalanceSnapshot[] = [];
+  for (const rawAddress of addresses) {
+    const address = normalizeAddress(rawAddress);
+    const balanceWei = await getBalanceWei(httpClient, address, blockTag);
+    result.push({ address, balanceWei });
+  }
+  return result;
+}
+
+async function getBalanceWei(httpClient: any, address: string, blockTag: number): Promise<string> {
+  if (typeof httpClient.getBalance === 'function') {
+    const value = await httpClient.getBalance(address, blockTag);
+    return typeof value === 'bigint' ? value.toString() : String(value);
+  }
+  if (httpClient.eth && typeof httpClient.eth.getBalance === 'function') {
+    const value = await httpClient.eth.getBalance(address, blockTag);
+    return typeof value === 'bigint' ? value.toString() : String(value);
+  }
+  throw new Error('Unsupported EVM provider client: getBalance() API was not found');
+}
+
+function readWatchAddresses(): string[] {
+  const raw = process.env.WATCH_ADDRESSES ?? DEFAULT_WATCH_ADDRESSES.join(',');
+  const addresses = raw.split(',').map((item) => normalizeAddress(item)).filter(Boolean);
+  return addresses.length ? Array.from(new Set(addresses)) : DEFAULT_WATCH_ADDRESSES;
+}
+
+function normalizeAddress(value: string): string { return String(value ?? '').trim().toLowerCase(); }

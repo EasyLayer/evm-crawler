@@ -2,18 +2,18 @@ import { resolve } from 'node:path';
 import { config } from 'dotenv';
 import { bootstrap } from '@easylayer/evm-crawler/node';
 import { EvmNetworkInitializedEvent, BlockchainProviderService } from '@easylayer/evm';
-import { SQLiteService, payloadToObject } from '../../+helpers/sqlite/sqlite.service';
+import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
+import { mockBlocks } from './mocks';
 
-jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// Mock getOneBlockByHeight used by assertRuntimeCompatibility's probe call.
-// Block 2 on mainnet (genesis era) has no baseFeePerGas, which would fail
-// the hasEIP1559 check in NetworkConfig. Return a fixture block that has it.
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(-1);
+
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
   .mockImplementation(
-    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
+    async (height: string | number) => mockBlocks.find((block) => block.blockNumber === Number(height)) ?? null
   );
 
 describe('EVM Crawler: First Init — Only Network Flow', () => {
@@ -25,7 +25,7 @@ describe('EVM Crawler: First Init — Only Network Flow', () => {
     jest.useRealTimers();
     jest.resetModules();
 
-    config({ path: resolve(__dirname, '.env') });
+    config({ path: resolve(process.cwd(), 'src/first-app-init/init-only-network-flow/.env') });
     await cleanDataFolder('eventstore');
 
     await bootstrap({
@@ -40,32 +40,32 @@ describe('EVM Crawler: First Init — Only Network Flow', () => {
     await dbService?.close().catch(() => {});
   });
 
-  it('should create SQLite DB with correct tables and persist EvmNetworkInitializedEvent', async () => {
+  it('should bootstrap, create database with required tables, and persist initialization events', async () => {
     dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
     await dbService.connect();
 
-    // DB integrity
-    const integrity = await dbService.all(`PRAGMA integrity_check`);
-    expect(integrity[0]?.integrity_check).toBe('ok');
+    const [integrity] = await dbService.all(`PRAGMA integrity_check`);
+    expect(integrity.integrity_check).toBe('ok');
 
-    // Required tables exist
     const tables = await dbService.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);
-    const names = tables.map((t: any) => t.name);
-    expect(names).toEqual(expect.arrayContaining(['network', 'snapshots', 'outbox']));
+    expect(tables.map((row: any) => row.name)).toEqual(expect.arrayContaining(['snapshots', 'outbox', 'network']));
 
-    // network table has correct schema
     const cols = await dbService.all(`PRAGMA table_info('network')`);
-    const colNames = cols.map((c: any) => c.name);
-    expect(colNames).toEqual(
+    expect(cols.map((col: any) => col.name)).toEqual(
       expect.arrayContaining(['id', 'version', 'requestId', 'type', 'payload', 'blockHeight', 'timestamp'])
     );
 
-    // One EvmNetworkInitializedEvent persisted
-    const events = await dbService.all(`SELECT * FROM network ORDER BY id ASC`);
-    expect(events.length).toBeGreaterThanOrEqual(1);
+    const networkEvents = await dbService.all(`SELECT * FROM network ORDER BY id ASC`);
+    expect(networkEvents.length).toBe(1);
 
-    const initEvent = events.find((e: any) => e.type === 'EvmNetworkInitializedEvent');
-    expect(initEvent).toBeDefined();
-    expect(Number(initEvent.blockHeight)).toBeGreaterThanOrEqual(-1);
+    const event = networkEvents[0];
+    expect(event.version).toBe(1);
+    expect(event.type).toBe('EvmNetworkInitializedEvent');
+    expect(event.blockHeight).toBe(null);
+    expect(UUID_RE.test(event.requestId)).toBe(true);
+    expect(Number.isInteger(event.timestamp)).toBe(true);
+    expect(event.timestamp).toBeGreaterThan(1e15);
+    expect(event.timestamp).toBeLessThanOrEqual(Number.MAX_SAFE_INTEGER);
+    expect([0, 1]).toContain(event.isCompressed);
   });
 });

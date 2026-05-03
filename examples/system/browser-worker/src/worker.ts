@@ -1,54 +1,8 @@
-/**
- * SharedWorker entry point.
- *
- * Architecture:
- *   SharedWorker (this file)
- *   └── bootstrap()
- *         ├── EventStore  (sql.js + IndexedDB — shared across all tabs)
- *         ├── BlockchainProvider (fetch-based RPC)
- *         ├── AddressUtxoWatcher model
- *         ├── GetBalanceQueryHandler (factory)
- *         └── SharedWorkerServerService  ← auto-registered via TRANSPORT_OUTBOX_KIND
- *               ├── ping → pong
- *               └── query.request → QueryBus → query.response
- */
 import { bootstrap } from '@easylayer/evm-crawler';
-import { AddressUtxoWatcher } from './model';
+import { NativeBalanceWatcher } from './model';
 import { GetBalanceQueryHandler } from './query';
-
-// ── Port queue ────────────────────────────────────────────────────────────────
-// Capture ports that connect BEFORE SharedWorkerServerService is instantiated.
-// The service drains this queue in its constructor via __pendingSharedWorkerPorts.
 (self as any).__pendingSharedWorkerPorts = [];
-(self as any).onconnect = (e: MessageEvent) => {
-  const port = e.ports[0];
-  port.start();
-  ((self as any).__pendingSharedWorkerPorts as MessagePort[]).push(port);
-};
-
-// ── Configuration ─────────────────────────────────────────────────────────────
-(self as any).__ENV = {
-  NODE_ENV: 'development',
-  NETWORK_TYPE: 'testnet',
-  NETWORK_PROVIDER_TYPE: 'rpc',
-  START_BLOCK_HEIGHT: '0',
-  PROVIDER_NETWORK_RPC_URLS: 'http://btc:ak3p9g7s2tey@localhost:4173/rpc',
-  EVENTSTORE_DB_TYPE: 'sqljs',
-  TRANSPORT_OUTBOX_ENABLE: '1',
-  TRANSPORT_OUTBOX_KIND: 'shared-worker-server',
-  EVENTSTORE_SQLITE_RUNTIME_BASE_URL: '/sqlite' //'https://cdn.jsdelivr.net/npm/@sqlite.org/sqlite-wasm@3.51.2-build8/dist'
-};
-
-// ── Bootstrap ─────────────────────────────────────────────────────────────────
-(async () => {
-  console.log('[worker] starting evm crawler...');
-
-  await bootstrap({
-    Models: [AddressUtxoWatcher],
-    QueryHandlers: [GetBalanceQueryHandler],
-  });
-
-  console.log('[worker] crawler ready');
-})().catch((err) => {
-  console.error('[worker] bootstrap failed:', err);
-});
+(self as any).onconnect = (event: MessageEvent) => { const port = event.ports[0]; port.start(); ((self as any).__pendingSharedWorkerPorts as MessagePort[]).push(port); };
+const defaultWatchAddress = '0xd8da6bf26964af9d7eed9e03e53415d37aa96045'; const watchAddresses = String(import.meta.env.VITE_WATCH_ADDRESSES || defaultWatchAddress);
+(self as any).__ENV = { APPLICATION_NAME: 'evm-browser-worker-example', NODE_ENV: 'development', LOG_LEVEL: 'info', NETWORK_CHAIN_ID: '1', NETWORK_NATIVE_CURRENCY_SYMBOL: 'ETH', NETWORK_NATIVE_CURRENCY_DECIMALS: '18', NETWORK_BLOCK_TIME_SECONDS: '12', NETWORK_HAS_EIP1559: 'true', NETWORK_HAS_WITHDRAWALS: 'true', NETWORK_HAS_BLOB_TRANSACTIONS: 'true', PROVIDER_NETWORK_RPC_URLS: '/rpc', EVENTSTORE_DB_TYPE: 'sqlite-opfs', EVENTSTORE_SQLITE_RUNTIME_BASE_URL: '/sqlite', TRANSPORT_OUTBOX_ENABLE: '1', TRANSPORT_OUTBOX_KIND: 'shared-worker-server', WATCH_ADDRESSES: watchAddresses };
+(async () => { console.log('[worker] starting evm crawler...'); await bootstrap({ Models: [NativeBalanceWatcher], QueryHandlers: [GetBalanceQueryHandler] }); console.log('[worker] crawler ready'); })().catch((error) => { console.error('[worker] bootstrap failed:', error); });

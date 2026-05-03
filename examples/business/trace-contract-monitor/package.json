@@ -1,0 +1,27 @@
+{
+  "name": "trace-contract-monitor",
+  "private": true,
+  "version": "0.0.3",
+  "description": "EVM business example",
+  "type": "commonjs",
+  "scripts": {
+    "clear": "yarn clear:node_modules",
+    "clear:node_modules": "rimraf node_modules",
+    "start": "node -r ts-node/register src/main.ts"
+  },
+  "dependencies": {
+    "@easylayer/common": "1.2.1",
+    "@easylayer/evm-crawler": "0.0.3",
+    "dotenv": "16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "20.10.4",
+    "rimraf": "5.0.5",
+    "ts-node": "10.9.2",
+    "typescript": "5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0 <=22.x.x"
+  },
+  "license": ""
+}

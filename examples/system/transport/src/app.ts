@@ -1,16 +1,6 @@
+import { config } from 'dotenv';
 import { bootstrap } from '@easylayer/evm-crawler';
-import { AddressUtxoWatcher } from './model';
-import {
-  GetBalanceQueryHandler
-} from './query';
-
-(async () => {  
-  await bootstrap({
-    Models: [AddressUtxoWatcher],
-    QueryHandlers: [GetBalanceQueryHandler]
-  })
-})().catch((err) => {
-  // eslint-disable-next-line no-console
-  console.error(err);
-  process.exit(1);
-});
+import { NativeBalanceWatcher } from './model';
+import { GetBalanceQueryHandler } from './query';
+config();
+(async () => { await bootstrap({ Models: [NativeBalanceWatcher], QueryHandlers: [GetBalanceQueryHandler] }); })().catch((error) => { console.error(error); process.exit(1); });

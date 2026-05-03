@@ -7,6 +7,7 @@
   "module": "./dist/esm/index.js",
   "exports": {
     ".": {
+      "browser": "./dist/browser/index.js",
       "module": "./dist/esm/index.js",
       "default": "./dist/index.js"
     },
@@ -35,9 +36,10 @@
     "clear": "yarn run clear:dist && yarn run clear:node_modules",
     "clear:node_modules": "rimraf node_modules",
     "clear:dist": "rimraf dist",
-    "build:esm": "tsc -b ./tsconfig.esm.json",
     "build:cjs": "tsc -b ./tsconfig.cjs.json",
-    "build": "yarn build:cjs && yarn build:esm",
+    "build:esm": "tsc -b ./tsconfig.esm.json",
+    "build:browser": "rollup -c rollup.config.mjs",
+    "build": "yarn build:cjs && yarn build:esm && yarn build:browser",
     "prepublishOnly": "yarn clear:dist && yarn build",
     "test:unit": "jest --maxWorkers=1 -c ./jest.config.unit.mjs",
     "lint": "eslint -c eslint.config.mjs \"src/**/*.ts\"",
@@ -71,6 +73,7 @@
   },
   "devDependencies": {
     "@nestjs/testing": "10.2.10",
+    "@rollup/plugin-alias": "6.0.0",
     "@rollup/plugin-commonjs": "29.0.2",
     "@rollup/plugin-json": "6.1.0",
     "@rollup/plugin-node-resolve": "16.0.3",
