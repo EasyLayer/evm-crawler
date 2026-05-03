@@ -33,19 +33,11 @@ export class ProvidersConfig {
   @JSONSchema({ description: 'Network WebSocket URLs (comma-separated). Required for subscribe-ws block strategy.' })
   PROVIDER_NETWORK_WS_URLS?: string[];
 
-  /**
-   * Mempool RPC HTTP URLs.
-   * Required for MEMPOOL_LOADER_STRATEGY_NAME=txpool-content.
-   */
   @Transform(({ value }) => parseUrls(value))
   @IsOptional()
   @JSONSchema({ description: 'Mempool RPC HTTP URLs (comma-separated). Enables txpool-content mempool tracking.' })
   PROVIDER_MEMPOOL_RPC_URLS?: string[];
 
-  /**
-   * Mempool WebSocket URLs.
-   * Required for MEMPOOL_LOADER_STRATEGY_NAME=subscribe-ws.
-   */
   @Transform(({ value }) => parseUrls(value))
   @IsOptional()
   @JSONSchema({ description: 'Mempool WebSocket URLs (comma-separated). Enables subscribe-ws mempool tracking.' })

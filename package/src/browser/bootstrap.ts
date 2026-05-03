@@ -4,7 +4,6 @@ import { DependenciesScanner } from '@nestjs/core/scanner';
 import { InstanceLoader } from '@nestjs/core/injector/instance-loader';
 import { NestContainer } from '@nestjs/core/injector/container';
 import { MetadataScanner } from '@nestjs/core/metadata-scanner';
-import { GraphInspector } from '@nestjs/core/inspector/graph-inspector';
 import { NoopGraphInspector } from '@nestjs/core/inspector/noop-graph-inspector';
 import { ApplicationConfig } from '@nestjs/core/application-config';
 import { Injector } from '@nestjs/core/injector/injector';

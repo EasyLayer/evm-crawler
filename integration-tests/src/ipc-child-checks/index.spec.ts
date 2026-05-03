@@ -1,125 +1,90 @@
 import { resolve } from 'node:path';
-import type { Server as HttpServer } from 'node:http';
-import { createServer } from 'node:http';
+import type { ChildProcess } from 'node:child_process';
+import { fork } from 'node:child_process';
 import { config } from 'dotenv';
 import type { INestApplicationContext } from '@nestjs/common';
-import { bootstrap } from '@easylayer/evm-crawler';
-import { EvmNetworkInitializedEvent, EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
+import { EvmNetworkInitializedEvent, EvmNetworkBlocksAddedEvent } from '@easylayer/evm';
 import { Client } from '@easylayer/transport-sdk';
 import { cleanDataFolder } from '../+helpers/clean-data-folder';
-import BlocksModel, { AGGREGATE_ID } from './blocks.model';
-import { mockBlocks } from './mocks';
+import { AGGREGATE_ID } from './blocks.model';
 
-jest.setTimeout(60_000);
+jest.setTimeout(60000);
 
-async function getFreePort(host = '127.0.0.1'): Promise<number> {
-  const srv = createServer();
-  await new Promise<void>((r) => srv.listen(0, host, r));
-  const port = (srv.address() as any).port as number;
-  await new Promise<void>((r) => srv.close(() => r()));
-  return port;
+function makeDeferred() {
+  let resolveFn!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolveFn = res;
+  });
+  return { promise, resolve: resolveFn };
 }
 
-// ===== Mocks =====
-
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights')
-  .mockImplementation(async (heights: (string | number)[]): Promise<any> => {
-    return mockBlocks
-      .filter((block) => heights.map(Number).includes(block.blockNumber))
-      .map((block) => ({
-        hash: block.hash,
-        number: block.blockNumber,
-        size: 1,
-        gasLimit: block.gasLimit,
-        gasUsed: block.gasUsed,
-        gasUsedPercentage: block.gasUsed / block.gasLimit,
-        timestamp: block.timestamp,
-        transactionCount: block.transactions?.length ?? 0,
-        miner: block.miner ?? '0x0',
-        difficulty: (block as any).difficulty ?? '0x0',
-        parentHash: block.parentHash,
-        unclesCount: (block as any).uncles?.length ?? 0,
-      }));
+function waitChildReady(cp: ChildProcess, timeoutMs = 15000): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onMsg = (m: any) => {
+      if (m && (m.type === 'ready' || m.action === 'ping')) {
+        cleanup();
+        resolve();
+      }
+    };
+    const onExit = (code: number | null, signal: string | null) => {
+      cleanup();
+      reject(new Error(`child exited before ready (code=${code}, signal=${signal})`));
+    };
+    const onErr = (err: any) => {
+      cleanup();
+      reject(err instanceof Error ? err : new Error(String(err)));
+    };
+    const cleanup = () => {
+      clearTimeout(timer);
+      cp.off('message', onMsg);
+      cp.off('exit', onExit);
+      cp.off('error', onErr);
+    };
+    cp.on('message', onMsg);
+    cp.once('exit', onExit);
+    cp.once('error', onErr);
+    const timer = setTimeout(
+      () => {
+        cleanup();
+        reject(new Error('child did not become ready (timeout)'));
+      },
+      Math.max(1, timeoutMs)
+    );
   });
+}
 
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => {
-      const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
-      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
-    })
-  );
-
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => {
-      const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
-      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
-    })
-  );
-
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
-  );
-
-describe('EVM Crawler: HTTP Transport Integration', () => {
-  let app: INestApplicationContext | undefined;
+describe('EVM Crawler: IPC Transport (server in child, client in parent)', () => {
+  let app!: INestApplicationContext;
   let client!: Client;
-  let webhookSrv: HttpServer | undefined;
+  let child!: ChildProcess;
 
   let eventsDeferred: { promise: Promise<void>; resolve: () => void };
-  const expectedEventCount = mockBlocks.length;
+  const expectedEventCount = 3;
   const receivedBlockAddedEvents: any[] = [];
   let resolved = false;
-
-  const envBackup: Record<string, string | undefined> = {};
 
   beforeAll(async () => {
     jest.useRealTimers();
     jest.resetModules();
 
-    const makeDeferred = () => {
-      let resolveFn!: () => void;
-      const promise = new Promise<void>((res) => {
-        resolveFn = res;
-      });
-      return { promise, resolve: resolveFn };
-    };
     eventsDeferred = makeDeferred();
 
-    config({ path: resolve(process.cwd(), 'src/http-checks/.env') });
+    config({ path: resolve(process.cwd(), 'src/ipc-child-checks/.env') });
     await cleanDataFolder('eventstore');
 
-    const port = await getFreePort();
-    const host = '127.0.0.1';
-    const webhookUrl = `http://${host}:${port}/events`;
-    const pingUrl = `http://${host}:${port}/ping`;
+    const appPath = resolve(process.cwd(), 'src/ipc-child-checks/ipc-child.runner.ts');
 
-    envBackup.TRANSPORT_HTTP_WEBHOOK_URL = process.env.TRANSPORT_HTTP_WEBHOOK_URL;
-    envBackup.TRANSPORT_HTTP_WEBHOOK_PING_URL = process.env.TRANSPORT_HTTP_WEBHOOK_PING_URL;
-    process.env.TRANSPORT_HTTP_WEBHOOK_URL = webhookUrl;
-    process.env.TRANSPORT_HTTP_WEBHOOK_PING_URL = pingUrl;
-
-    const baseUrl = `http://${process.env.TRANSPORT_HTTP_HOST}:${process.env.TRANSPORT_HTTP_PORT}`.replace(/\/+$/, '');
-    client = new Client({
-      transport: {
-        type: 'http',
-        inbound: { webhookUrl },
-        query: { baseUrl },
-      },
+    child = fork(appPath, [], {
+      execArgv: ['-r', 'ts-node/register/transpile-only'],
+      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      env: process.env,
     });
 
-    webhookSrv = createServer(client.nodeHttpHandler());
-    await new Promise<void>((r) => webhookSrv!.listen(port, host, r));
+    await waitChildReady(child);
 
-    app = await bootstrap({ Models: [BlocksModel] });
+    client = new Client({
+      transport: { type: 'ipc-parent', options: { child, pongPassword: 'pw' } },
+    });
 
     client.subscribe('BlockAddedEvent', async (event: any) => {
       receivedBlockAddedEvents.push(event);
@@ -132,16 +97,30 @@ describe('EVM Crawler: HTTP Transport Integration', () => {
     await eventsDeferred.promise;
   });
 
+  /* eslint-disable no-empty */
   afterAll(async () => {
-    Object.entries(envBackup).forEach(([k, v]) => {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    });
     await (client as any)?.close?.().catch(() => undefined);
-    await new Promise<void>((r) => webhookSrv?.close?.(() => r())).catch(() => undefined);
-    await app?.close?.().catch(() => undefined);
+    if (child && child.pid) {
+      try {
+        child.kill('SIGTERM');
+      } catch {}
+      await new Promise<void>((resolve) => {
+        const to = setTimeout(() => {
+          try {
+            child.kill('SIGKILL');
+          } catch {}
+          resolve();
+        }, 3000);
+        child.once('exit', () => {
+          clearTimeout(to);
+          resolve();
+        });
+      }).catch(() => undefined);
+    }
+    await (app as any)?.close?.().catch(() => undefined);
     jest.restoreAllMocks();
   });
+  /* eslint-enable no-empty */
 
   it('should get three BlockAddedEvent events', () => {
     expect(receivedBlockAddedEvents.length).toBe(expectedEventCount);
@@ -168,6 +147,7 @@ describe('EVM Crawler: HTTP Transport Integration', () => {
     expect(events[2].eventType).toBe(EvmNetworkBlocksAddedEvent.name);
     expect(events[3].eventType).toBe(EvmNetworkBlocksAddedEvent.name);
     expect(events[1].blockHeight).toBe(0);
+    expect(events[1].requestId).toBeDefined();
     expect(events[2].blockHeight).toBe(1);
     expect(events[3].blockHeight).toBe(2);
   });
