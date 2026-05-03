@@ -12,6 +12,12 @@ import { mockBlocks } from './mocks';
 
 jest.setTimeout(60_000);
 
+const originalGetCurrentBlockHeightFromNetwork = BlockchainProviderService.prototype.getCurrentBlockHeightFromNetwork;
+
+function formatHeights(heights: Array<string | number>): number[] {
+  return heights.map((height) => Number(height));
+}
+
 async function getFreePort(host = '127.0.0.1'): Promise<number> {
   const srv = createServer();
   await new Promise<void>((r) => srv.listen(0, host, r));
@@ -22,52 +28,63 @@ async function getFreePort(host = '127.0.0.1'): Promise<number> {
 
 // ===== Mocks =====
 
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockImplementation(async function (
+  this: BlockchainProviderService
+): Promise<number> {
+  const height = await originalGetCurrentBlockHeightFromNetwork.call(this);
+  return height;
+});
+
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights')
   .mockImplementation(async (heights: (string | number)[]): Promise<any> => {
-    return mockBlocks
-      .filter((block) => heights.map(Number).includes(block.blockNumber))
-      .map((block) => ({
-        hash: block.hash,
-        number: block.blockNumber,
-        size: 1,
-        gasLimit: block.gasLimit,
-        gasUsed: block.gasUsed,
-        gasUsedPercentage: block.gasUsed / block.gasLimit,
-        timestamp: block.timestamp,
-        transactionCount: block.transactions?.length ?? 0,
-        miner: block.miner ?? '0x0',
-        difficulty: (block as any).difficulty ?? '0x0',
-        parentHash: block.parentHash,
-        unclesCount: (block as any).uncles?.length ?? 0,
-      }));
+    const blocks = mockBlocks.filter((block) => heights.map(Number).includes(block.blockNumber));
+    return blocks.map((block) => ({
+      hash: block.hash,
+      number: block.blockNumber,
+      size: 1,
+      gasLimit: block.gasLimit,
+      gasUsed: block.gasUsed,
+      gasUsedPercentage: block.gasUsed / block.gasLimit,
+      timestamp: block.timestamp,
+      transactionCount: block.transactions?.length ?? 0,
+      miner: block.miner ?? '0x0',
+      difficulty: (block as any).difficulty ?? '0x0',
+      parentHash: block.parentHash,
+      unclesCount: (block as any).uncles?.length ?? 0,
+    }));
   });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => {
+  .mockImplementation(async (heights: (string | number)[]) => {
+    const normalizedHeights = formatHeights(heights);
+    const blocks = heights.map((h) => {
       const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
       return blk;
-    })
-  );
+    });
+    return blocks;
+  });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => {
+  .mockImplementation(async (heights: (string | number)[]) => {
+    const normalizedHeights = formatHeights(heights);
+    const blocks = heights.map((h) => {
       const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
       return blk;
-    })
-  );
+    });
+    return blocks;
+  });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
-  );
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null;
+    return block;
+  });
 
 describe('EVM Crawler: HTTP Transport Integration', () => {
   let app: INestApplicationContext | undefined;
@@ -94,7 +111,8 @@ describe('EVM Crawler: HTTP Transport Integration', () => {
     };
     eventsDeferred = makeDeferred();
 
-    config({ path: resolve(process.cwd(), 'src/http-checks/.env') });
+    const envPath = resolve(process.cwd(), 'src/http-checks/.env');
+    const loadedEnv = config({ path: envPath, override: true });
     await cleanDataFolder('eventstore');
 
     const port = await getFreePort();
