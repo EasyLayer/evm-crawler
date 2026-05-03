@@ -1,10 +1,12 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
-import { bootstrap } from '@easylayer/evm-crawler/node';
-import { EvmNetworkBlocksAddedEvent, EvmNetworkInitializedEvent, BlockchainProviderService } from '@easylayer/evm';
-import { SQLiteService, payloadToObject } from '../../+helpers/sqlite/sqlite.service';
+import { bootstrap } from '@easylayer/evm-crawler';
+import { EvmNetworkInitializedEvent, EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
+import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import { mockBlocks } from './mocks';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
 jest
@@ -30,57 +32,52 @@ jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').m
   }))
 );
 
-// Mock getOneBlockByHeight used by assertRuntimeCompatibility's probe call.
-// Block 2 on mainnet (genesis era) has no baseFeePerGas, which would fail
-// the hasEIP1559 check in NetworkConfig. Return a fixture block that has it.
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
-  );
-
 describe('EVM Crawler: Second App Init — Restore Network Flow', () => {
   let dbService!: SQLiteService;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   beforeAll(async () => {
-    jest.useFakeTimers({ advanceTimers: true });
     jest.resetModules();
+    config({ path: resolve(process.cwd(), 'src/second-app-init/init-restore-network-flow/.env') });
 
-    config({ path: resolve(__dirname, '.env') });
-
-    // ===== First bootstrap: process 3 blocks =====
     await cleanDataFolder('eventstore');
+
     await bootstrap({
       testing: {
         handlerEventsToWait: [{ eventType: EvmNetworkBlocksAddedEvent, count: mockBlocks.length }],
       },
     });
-    jest.runAllTimers();
 
-    // ===== Second bootstrap: restore from eventstore =====
     await bootstrap({
       testing: {
         handlerEventsToWait: [{ eventType: EvmNetworkInitializedEvent, count: 1 }],
       },
     });
-    jest.runAllTimers();
   });
 
   afterAll(async () => {
-    jest.useRealTimers();
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });
 
-  it('should NOT create new EvmNetworkInitializedEvent events on second run (aggregate restored from snapshot)', async () => {
+  it('should init existing Network aggregate with correct height', async () => {
     dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
     await dbService.connect();
 
-    const initEvents = await dbService.all(`SELECT * FROM network WHERE type='EvmNetworkInitializedEvent'`);
-    // Should only have 1 from the first run (second run restores from snapshot)
-    expect(initEvents).toHaveLength(1);
+    const events = await dbService.all(`SELECT * FROM network ORDER BY version ASC`);
+
+    expect(events).toHaveLength(mockBlocks.length + 2);
+    events.forEach((event: any, index: number) => expect(event.version).toBe(index + 1));
+
+    const newInit = events[events.length - 1]!;
+    expect(newInit.type).toBe('EvmNetworkInitializedEvent');
+    expect(Number(newInit.blockHeight)).toBe(mockBlocks[mockBlocks.length - 1]!.blockNumber);
+    expect(UUID_RE.test(newInit.requestId)).toBe(true);
+    expect(Number.isInteger(newInit.timestamp)).toBe(true);
+    expect(newInit.timestamp).toBeGreaterThan(1e15);
   });
 
   it('should have correct lastBlockHeight after restore', async () => {
@@ -88,7 +85,7 @@ describe('EVM Crawler: Second App Init — Restore Network Flow', () => {
       `SELECT * FROM network WHERE type='EvmNetworkBlocksAddedEvent' ORDER BY blockHeight DESC LIMIT 1`
     );
     expect(lastAddedEvent).toHaveLength(1);
-    expect(Number(lastAddedEvent[0]!.blockHeight)).toBe(2);
+    expect(Number(lastAddedEvent[0]!.blockHeight)).toBe(mockBlocks[mockBlocks.length - 1]!.blockNumber);
   });
 
   it('total EvmNetworkBlocksAddedEvents should still be 3 (no duplicates from restore)', async () => {

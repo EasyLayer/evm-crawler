@@ -1,8 +1,6 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
-import { bootstrap } from '@easylayer/evm-crawler/node';
-import { Model } from '@easylayer/evm-crawler';
-import type { ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
+import { bootstrap } from '@easylayer/evm-crawler';
 import {
   EvmNetworkInitializedEvent,
   EvmNetworkBlocksAddedEvent,
@@ -11,132 +9,173 @@ import {
 } from '@easylayer/evm';
 import { SQLiteService, payloadToObject } from '../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../+helpers/clean-data-folder';
-import { mockFakeChainBlocks, mockRealChainBlocks } from './mocks';
+import BlocksModel, { AGGREGATE_ID, BlockAddedEvent } from './blocks.model';
+import { reorgBlock, mockFakeChainBlocks, mockRealChainBlocks } from './mocks';
 
-// ===== Switch between fake and real chain =====
+const LAST_MOCK_HEIGHT = Math.max(
+  ...mockFakeChainBlocks.map((b) => Number(b.blockNumber)),
+  ...mockRealChainBlocks.map((b) => Number(b.blockNumber))
+); // 3
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 let useReal = false;
 const pickChain = () => (useReal ? mockRealChainBlocks : mockFakeChainBlocks);
 
-jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(LAST_MOCK_HEIGHT);
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(async (height: string | number) => {
+  .mockImplementation(async (height: string | number): Promise<any> => {
     const h = Number(height);
     if (h >= 2) useReal = true;
-    return pickChain().find((b) => b.blockNumber === h) ?? null;
+    return pickChain().find((b) => Number(b.blockNumber) === h) ?? null;
+  });
+
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights')
+  .mockImplementation(async (heights: (string | number)[]): Promise<any[]> => {
+    const hs = heights.map(Number);
+    return pickChain()
+      .filter((b) => hs.includes(Number(b.blockNumber)))
+      .map((b) => ({
+        hash: b.hash,
+        number: Number(b.blockNumber),
+        size: b.size,
+        gasLimit: b.gasLimit,
+        gasUsed: b.gasUsed,
+        gasUsedPercentage: 0,
+        timestamp: b.timestamp,
+        transactionCount: b?.transactions?.length,
+        miner: b.miner,
+        difficulty: b.difficulty,
+        parentHash: b.parentHash,
+        unclesCount: b.uncles.length,
+      }));
   });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => pickChain().find((b) => b.blockNumber === Number(h))!)
-  );
+  .mockImplementation(async (heights: (string | number)[]): Promise<any[]> => {
+    const hs = heights.map(Number);
+    return hs.map((h) => {
+      const blk = pickChain().find((b) => Number(b.blockNumber) === h);
+      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
+      return blk;
+    });
+  });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
-  .mockImplementation(async (heights: (string | number)[]) =>
-    heights.map((h) => pickChain().find((b) => b.blockNumber === Number(h))!)
-  );
-
-jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(async (heights) =>
-  heights.map((h) => ({
-    hash: pickChain().find((b) => b.blockNumber === Number(h))?.hash ?? '0x0',
-    number: Number(h),
-    size: 3,
-    gasLimit: 30000000,
-    gasUsed: 0,
-    gasUsedPercentage: 0,
-    timestamp: 0,
-    transactionCount: 1,
-    miner: '0x0',
-    difficulty: '0x0',
-    parentHash: '0x0',
-    unclesCount: 0,
-  }))
-);
-
-// ===== Model =====
-
-export class BlockHashEvent {
-  constructor(
-    public readonly hash: string,
-    public readonly blockNumber: number
-  ) {}
-}
-
-class ReorgModel extends Model {
-  async processBlock({ block }: ProcessBlockExecutionContext): Promise<void> {
-    this.apply(new BlockHashEvent(block.hash, block.blockNumber));
-  }
-  protected onBlockHashEvent(_: BlockHashEvent): void {}
-}
-
-// ===== Test =====
+  .mockImplementation(async (heights: (string | number)[]): Promise<any[]> => {
+    const hs = heights.map(Number);
+    return hs.map((h) => {
+      const blk = pickChain().find((b) => Number(b.blockNumber) === h);
+      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
+      return blk;
+    });
+  });
 
 describe('EVM Crawler: Reorganisation Flow', () => {
   let dbService!: SQLiteService;
 
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
 
   beforeAll(async () => {
-    jest.useFakeTimers({ advanceTimers: true });
     jest.resetModules();
-
-    config({ path: resolve(__dirname, '.env') });
+    config({ path: resolve(process.cwd(), 'src/reorganisation/.env') });
     await cleanDataFolder('eventstore');
 
-    // Expected event sequence:
-    // NetworkInitialized(1) + BlocksAdded×3 fake + Reorganized(1) + BlocksAdded×1 real block 2
     await bootstrap({
-      Models: [ReorgModel],
+      Models: [BlocksModel],
       testing: {
-        handlerEventsToWait: [
-          { eventType: EvmNetworkInitializedEvent, count: 1 },
-          { eventType: EvmNetworkBlocksAddedEvent, count: 4 }, // 3 fake + 1 real
-          { eventType: EvmNetworkReorganizedEvent, count: 1 },
-        ],
+        handlerEventsToWait: [{ eventType: EvmNetworkBlocksAddedEvent, count: 4 }],
       },
     });
-
-    jest.runAllTimers();
   });
 
   afterAll(async () => {
-    jest.useRealTimers();
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });
 
-  it('should persist EvmNetworkReorganizedEvent in network table', async () => {
+  it('should truncate reorganisation blocks from Network Model', async () => {
     dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
     await dbService.connect();
 
-    const reorgEvents = await dbService.all(
-      `SELECT * FROM network WHERE type='EvmNetworkReorganizedEvent' ORDER BY id ASC`
-    );
-    expect(reorgEvents).toHaveLength(1);
+    const [integrity] = await dbService.all(`PRAGMA integrity_check`);
+    expect(integrity.integrity_check).toBe('ok');
+
+    const events = await dbService.all(`SELECT * FROM network ORDER BY id ASC`);
+    const allTypes = events.map((e: any) => e.type);
+    expect(allTypes[0]).toBe('EvmNetworkInitializedEvent');
+    const reorgIdx = allTypes.indexOf('EvmNetworkReorganizedEvent');
+    expect(reorgIdx).toBeGreaterThan(0);
+    expect(allTypes.slice(reorgIdx + 1)).toContain('EvmNetworkBlocksAddedEvent');
+
+    events.forEach((ev: any) => {
+      expect(UUID_RE.test(ev.requestId)).toBe(true);
+      expect(Number.isInteger(ev.timestamp)).toBe(true);
+      expect(ev.timestamp).toBeGreaterThan(1e15);
+    });
+
+    const initEvent = events.find((e: any) => e.type === EvmNetworkInitializedEvent.name);
+    expect(initEvent).toBeDefined();
+
+    const reorgEvents = events.filter((e: any) => e.type === EvmNetworkReorganizedEvent.name);
+    expect(reorgEvents.length).toBe(1);
+    const reorgEvent = reorgEvents[0];
+    expect(reorgEvent.blockHeight).toBe(reorgBlock.blockNumber);
+    expect(reorgEvent.version).toBe(5);
+
+    const reorgPayload = payloadToObject(reorgEvent.payload);
+    expect(reorgPayload.blocks[0].blockNumber).toBe(2);
+    expect(reorgPayload.blocks[1].blockNumber).toBe(1);
+    expect(reorgPayload.blocks[0].hash).toBe(mockFakeChainBlocks.find((b) => b.blockNumber === 2)!.hash);
+    expect(reorgPayload.blocks[1].hash).toBe(mockFakeChainBlocks.find((b) => b.blockNumber === 1)!.hash);
+
+    const blockEvents = events.filter((e: any) => e.type === EvmNetworkBlocksAddedEvent.name);
+    expect(blockEvents.length).toBe(4);
+
+    expect(blockEvents[0].blockHeight).toBe(0);
+    expect(blockEvents[0].version).toBe(2);
+    expect(blockEvents[1].blockHeight).toBe(1);
+    expect(blockEvents[1].version).toBe(3);
+    expect(blockEvents[2].blockHeight).toBe(2);
+    expect(blockEvents[2].version).toBe(4);
+
+    expect(blockEvents[3].blockHeight).toBe(1);
+    expect(blockEvents[3].version).toBe(6);
+
+    const afterPayload = payloadToObject(blockEvents[3].payload);
+    expect(afterPayload.blocks[0].hash).toBe(mockRealChainBlocks.find((b) => b.blockNumber === 1)!.hash);
+    expect(afterPayload.blocks[0].hash).not.toBe(mockFakeChainBlocks.find((b) => b.blockNumber === 1)!.hash);
   });
 
-  it('should save REAL block 2 hash (not fake) in user model after reorg', async () => {
-    const modelEvents = await dbService.all(`SELECT * FROM reorgmodel WHERE blockHeight=2 ORDER BY id DESC LIMIT 1`);
-    // After rollback, only the real chain block 2 event should remain
-    expect(modelEvents).toHaveLength(1);
-    const payload = payloadToObject(modelEvents[0]!.payload);
-    // Real chain block 2 has different hash from fake
-    expect(payload.hash).toBe(mockRealChainBlocks[2]!.hash);
-    expect(payload.hash).not.toBe(mockFakeChainBlocks[2]!.hash);
-  });
+  it('should rollback reorganisation blocks from Users Model', async () => {
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    await dbService.connect();
 
-  it('network events sequence: Init, BlocksAdded×3, Reorganized, BlocksAdded', async () => {
-    const events = await dbService.all(`SELECT type, blockHeight FROM network ORDER BY id ASC`);
-    const types = events.map((e: any) => e.type);
-    expect(types[0]).toBe('EvmNetworkInitializedEvent');
-    expect(types).toContain('EvmNetworkReorganizedEvent');
+    const events = await dbService.all(`SELECT * FROM ${AGGREGATE_ID} ORDER BY version ASC`);
+    const userEvents = events.filter((e: any) => e.type === BlockAddedEvent.name);
+    expect(userEvents.length).toBe(2);
 
-    const reorgIdx = types.indexOf('EvmNetworkReorganizedEvent');
-    // After reorg, there must be another BlocksAdded
-    expect(types.slice(reorgIdx + 1)).toContain('EvmNetworkBlocksAddedEvent');
+    const blockBeforeReorg = userEvents[0];
+    const blockAfterReorg = userEvents[1];
+
+    expect(blockBeforeReorg.blockHeight).toBe(reorgBlock.blockNumber);
+    expect(blockBeforeReorg.version).toBe(1);
+
+    expect(blockAfterReorg.blockHeight).toBe(1);
+    expect(blockAfterReorg.version).toBe(2);
+
+    const payload0 = payloadToObject(blockBeforeReorg.payload);
+    expect(payload0.hash).toBe(reorgBlock.hash);
+
+    const payloadAfter = payloadToObject(blockAfterReorg.payload);
+    expect(payloadAfter.hash).toBe(mockRealChainBlocks.find((b) => b.blockNumber === 1)!.hash);
+    expect(payloadAfter.hash).not.toBe(mockFakeChainBlocks.find((b) => b.blockNumber === 1)!.hash);
   });
 });

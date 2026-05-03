@@ -1,9 +1,10 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
-import { bootstrap } from '@easylayer/evm-crawler/node';
+import { bootstrap } from '@easylayer/evm-crawler';
 import { EvmMempoolInitializedEvent, EvmNetworkInitializedEvent, BlockchainProviderService } from '@easylayer/evm';
 import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
+import { mockBlocks } from './mocks';
 
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
 jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockResolvedValue([]);
@@ -15,9 +16,6 @@ jest.spyOn(BlockchainProviderService.prototype, 'getRawMempoolFromAll').mockReso
 // Make mempool available
 jest.spyOn(BlockchainProviderService.prototype, 'isMempoolAvailable', 'get').mockReturnValue(true);
 
-// Mock getOneBlockByHeight used by assertRuntimeCompatibility's probe call.
-// Block 2 on mainnet (genesis era) has no baseFeePerGas, which would fail
-// the hasEIP1559 check in NetworkConfig. Return a fixture block that has it.
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
   .mockImplementation(
@@ -28,12 +26,9 @@ describe('EVM Crawler: First Init — With Mempool Flow', () => {
   let dbService!: SQLiteService;
 
   beforeAll(async () => {
-    jest.useRealTimers();
     jest.resetModules();
 
-    config({ path: resolve(__dirname, '.env') });
-    // Inject mempool ws url to activate mempool path
-    process.env.PROVIDER_MEMPOOL_WS_URLS = 'ws://mock-mempool';
+    config({ path: resolve(process.cwd(), 'src/first-app-init/init-with-mempool-flow/.env') });
 
     await cleanDataFolder('eventstore');
 
@@ -48,7 +43,6 @@ describe('EVM Crawler: First Init — With Mempool Flow', () => {
   });
 
   afterAll(async () => {
-    delete process.env.PROVIDER_MEMPOOL_WS_URLS;
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });

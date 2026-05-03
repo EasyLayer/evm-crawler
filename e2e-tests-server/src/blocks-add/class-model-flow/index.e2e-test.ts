@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
-import { bootstrap } from '@easylayer/evm-crawler/node';
+import { bootstrap } from '@easylayer/evm-crawler';
 import { EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
 import { SQLiteService, payloadToObject } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
@@ -63,9 +63,8 @@ describe('EVM Crawler: Add Blocks Flow (class model)', () => {
 
   beforeAll(async () => {
     jest.resetModules();
-    jest.useFakeTimers({ advanceTimers: true });
 
-    config({ path: resolve(__dirname, '.env') });
+    config({ path: resolve(process.cwd(), 'src/blocks-add/class-model-flow/.env') });
     await cleanDataFolder('eventstore');
 
     await bootstrap({
@@ -74,12 +73,9 @@ describe('EVM Crawler: Add Blocks Flow (class model)', () => {
         handlerEventsToWait: [{ eventType: EvmNetworkBlocksAddedEvent, count: mockBlocks.length }],
       },
     });
-
-    jest.runAllTimers();
   });
 
   afterAll(async () => {
-    jest.useRealTimers();
     jest.restoreAllMocks();
     await dbService?.close().catch(() => {});
   });

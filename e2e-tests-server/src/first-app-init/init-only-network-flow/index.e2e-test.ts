@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { config } from 'dotenv';
-import { bootstrap } from '@easylayer/evm-crawler/node';
+import { bootstrap } from '@easylayer/evm-crawler';
 import { EvmNetworkInitializedEvent, BlockchainProviderService } from '@easylayer/evm';
 import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
@@ -22,7 +22,6 @@ describe('EVM Crawler: First Init — Only Network Flow', () => {
   beforeEach(() => jest.clearAllMocks());
 
   beforeAll(async () => {
-    jest.useRealTimers();
     jest.resetModules();
 
     config({ path: resolve(process.cwd(), 'src/first-app-init/init-only-network-flow/.env') });

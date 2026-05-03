@@ -1,243 +1,226 @@
-import type { Block } from '@easylayer/evm';
-import type { Trace } from '@easylayer/evm';
+import type { Block, Trace, Transaction, TransactionReceipt, Log } from '@easylayer/evm';
 
-/**
- * 3 realistic EVM blocks in sequential chain order.
- * size=3 so that NETWORK_MAX_BLOCK_WEIGHT=1 causes each block to be a separate iterator batch.
- */
-export const mockBlocks: Block[] = [
-  {
-    blockNumber: 0,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-    parentHash: '0x0000000000000000000000000000000000000000000000000000000000000000',
-    nonce: '0x0000000000000000',
-    sha3Uncles: '0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347',
-    logsBloom: '0x' + '0'.repeat(512),
-    transactionsRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-    stateRoot: '0xd7f8974fb5ac78d9ac099b9ad5018bedc2ce0a72dad1827a1709da30580f0544',
-    receiptsRoot: '0x056b23fbba480696b65fe5a59b8f2148a1299103c4f57df839233af2cf4ca2d2',
-    miner: '0xf97e180c050e5ab072211ad2c213eb5aee4df134',
-    difficulty: '0x1',
-    totalDifficulty: '0x1',
-    extraData: '0x',
-    gasLimit: 30_000_000,
-    gasUsed: 21_000,
-    timestamp: 1_700_000_000,
-    uncles: [],
-    size: 3,
-    sizeWithoutReceipts: 2,
-    baseFeePerGas: '0x3b9aca00',
-    transactions: [
-      {
-        hash: '0xaaaa000000000000000000000000000000000000000000000000000000000001',
-        nonce: 0,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: '0xab5801a7d398351b8be11c439e05c5b3259aec9b',
-        value: '0xde0b6b3a7640000',
-        gas: 21_000,
-        input: '0x',
-        type: '0x2',
-        maxFeePerGas: '0x3b9aca00',
-        maxPriorityFeePerGas: '0x3b9aca00',
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-        blockNumber: 0,
-        transactionIndex: 0,
-        chainId: 1,
-        v: '0x1',
-        r: '0x' + 'a'.repeat(64),
-        s: '0x' + 'b'.repeat(64),
-      },
+const ADDRESS_A = '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a40';
+const ADDRESS_B = '0xab5801a7d398351b8be11c439e05c5b3259aec9b';
+const CONTRACT_A = '0x1234000000000000000000000000000000000001';
+
+function makeLog(overrides: Partial<Log> = {}): Log {
+  return {
+    address: CONTRACT_A,
+    topics: [
+      '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+      `0x000000000000000000000000${ADDRESS_A.slice(2)}`,
+      `0x000000000000000000000000${ADDRESS_B.slice(2)}`,
     ],
-    receipts: [
-      {
-        transactionHash: '0xaaaa000000000000000000000000000000000000000000000000000000000001',
-        transactionIndex: 0,
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-        blockNumber: 0,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: '0xab5801a7d398351b8be11c439e05c5b3259aec9b',
-        cumulativeGasUsed: 21_000,
-        gasUsed: 21_000,
-        contractAddress: null,
-        logsBloom: '0x' + '0'.repeat(512),
-        status: '0x1',
-        type: '0x2',
-        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
-        logs: [
-          {
-            address: '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2',
-            topics: [
-              '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
-              '0x000000000000000000000000d3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-              '0x000000000000000000000000ab5801a7d398351b8be11c439e05c5b3259aec9b',
-            ],
-            data: '0x0000000000000000000000000000000000000000000000000de0b6b3a7640000',
-            logIndex: 0,
+    data: '0x0000000000000000000000000000000000000000000000000de0b6b3a7640000',
+    ...overrides,
+  };
+}
+
+function makeTransaction(
+  blockNumber: number,
+  hash: string,
+  parentHash: string,
+  overrides: Partial<Transaction> = {}
+): Transaction {
+  return {
+    hash,
+    nonce: blockNumber,
+    from: ADDRESS_A,
+    to: ADDRESS_B,
+    value: '1000000000000000000',
+    gas: 21_000,
+    input: '0x',
+    blockHash: parentHash,
+    blockNumber,
+    transactionIndex: 0,
+    gasPrice: '1000000000',
+    chainId: 1,
+    v: '0x1',
+    r: `0x${'a'.repeat(64)}`,
+    s: `0x${'b'.repeat(64)}`,
+    type: '0x2',
+    maxFeePerGas: '1000000000',
+    maxPriorityFeePerGas: '1000000000',
+    ...overrides,
+  };
+}
+
+function makeReceipt(
+  blockNumber: number,
+  blockHash: string,
+  txHash: string,
+  logs: Log[] = [],
+  overrides: Partial<TransactionReceipt> = {}
+): TransactionReceipt {
+  return {
+    transactionHash: txHash,
+    transactionIndex: 0,
+    blockHash,
+    blockNumber,
+    from: ADDRESS_A,
+    to: ADDRESS_B,
+    cumulativeGasUsed: 21_000,
+    gasUsed: 21_000,
+    contractAddress: null,
+    logsBloom: `0x${'0'.repeat(512)}`,
+    status: '0x1',
+    type: '0x2',
+    effectiveGasPrice: '1000000000',
+    logs,
+    ...overrides,
+  };
+}
+
+function makeTrace(blockNumber: number, txHash: string, overrides: Partial<Trace> = {}): Trace {
+  return {
+    transactionHash: txHash,
+    transactionPosition: 0,
+    type: 'call',
+    action: {
+      from: ADDRESS_A,
+      to: ADDRESS_B,
+      value: '1000000000000000000',
+      gas: '0x5208',
+      input: '0x',
+    },
+    result: {
+      gasUsed: '0x5208',
+      output: '0x',
+    },
+    subtraces: 0,
+    traceAddress: [],
+    ...overrides,
+  };
+}
+
+function makeBlock(
+  blockNumber: number,
+  hash: string,
+  parentHash: string,
+  traces: Trace[],
+  overrides: Partial<Block> = {}
+): Block {
+  const txHash = `0x${String(blockNumber + 1)
+    .repeat(64)
+    .slice(0, 64)}`;
+  const tx = makeTransaction(blockNumber, txHash, hash);
+  const receiptLogs =
+    blockNumber === 0
+      ? [
+          makeLog({
+            blockNumber,
+            transactionHash: txHash,
             transactionIndex: 0,
-            transactionHash: '0xaaaa000000000000000000000000000000000000000000000000000000000001',
-            blockHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-            blockNumber: 0,
+            blockHash: hash,
+            logIndex: 0,
             removed: false,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    blockNumber: 1,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000002',
-    parentHash: '0x0000000000000000000000000000000000000000000000000000000000000001',
-    nonce: '0x0000000000000000',
-    sha3Uncles: '0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347',
-    logsBloom: '0x' + '0'.repeat(512),
-    transactionsRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-    stateRoot: '0x' + 'b'.repeat(64),
-    receiptsRoot: '0x056b23fbba480696b65fe5a59b8f2148a1299103c4f57df839233af2cf4ca2d2',
-    miner: '0xf97e180c050e5ab072211ad2c213eb5aee4df134',
-    difficulty: '0x1',
-    totalDifficulty: '0x2',
+          }),
+        ]
+      : [];
+  const receipt = makeReceipt(blockNumber, hash, txHash, receiptLogs);
+
+  return {
+    hash,
+    parentHash,
+    blockNumber,
+    transactionsRoot: `0x${(blockNumber + 10).toString(16).padStart(64, '0')}`,
+    receiptsRoot: `0x${(blockNumber + 20).toString(16).padStart(64, '0')}`,
+    stateRoot: `0x${(blockNumber + 30).toString(16).padStart(64, '0')}`,
+    miner: ADDRESS_A,
     extraData: '0x',
     gasLimit: 30_000_000,
     gasUsed: 21_000,
-    timestamp: 1_700_000_012,
+    timestamp: 1_700_000_000 + blockNumber * 12,
     uncles: [],
     size: 3,
     sizeWithoutReceipts: 2,
-    baseFeePerGas: '0x3b9aca00',
-    transactions: [
-      {
-        hash: '0xbbbb000000000000000000000000000000000000000000000000000000000002',
-        nonce: 1,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: '0xab5801a7d398351b8be11c439e05c5b3259aec9b',
-        value: '0x0',
-        gas: 21_000,
-        input: '0x',
-        type: '0x2',
-        maxFeePerGas: '0x3b9aca00',
-        maxPriorityFeePerGas: '0x3b9aca00',
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000002',
-        blockNumber: 1,
-        transactionIndex: 0,
-        chainId: 1,
-        v: '0x1',
-        r: '0x' + 'c'.repeat(64),
-        s: '0x' + 'd'.repeat(64),
-      },
-    ],
-    receipts: [
-      {
-        transactionHash: '0xbbbb000000000000000000000000000000000000000000000000000000000002',
-        transactionIndex: 0,
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000002',
-        blockNumber: 1,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: '0xab5801a7d398351b8be11c439e05c5b3259aec9b',
-        cumulativeGasUsed: 21_000,
-        gasUsed: 21_000,
-        contractAddress: null,
-        logsBloom: '0x' + '0'.repeat(512),
-        status: '0x1',
-        type: '0x2',
-        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
-        logs: [],
-      },
-    ],
-  },
-  {
-    blockNumber: 2,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000003',
-    parentHash: '0x0000000000000000000000000000000000000000000000000000000000000002',
     nonce: '0x0000000000000000',
-    sha3Uncles: '0x1dcc4de8dec75d7aab85b567b6ccd41ad312451b948a7413f0a142fd40d49347',
-    logsBloom: '0x' + '0'.repeat(512),
-    transactionsRoot: '0x56e81f171bcc55a6ff8345e692c0f86e5b48e01b996cadc001622fb5e363b421',
-    stateRoot: '0x' + 'c'.repeat(64),
-    receiptsRoot: '0x056b23fbba480696b65fe5a59b8f2148a1299103c4f57df839233af2cf4ca2d2',
-    miner: '0xf97e180c050e5ab072211ad2c213eb5aee4df134',
-    difficulty: '0x1',
-    totalDifficulty: '0x3',
-    extraData: '0x',
-    gasLimit: 30_000_000,
-    gasUsed: 21_000,
-    timestamp: 1_700_000_024,
-    uncles: [],
-    size: 3,
-    sizeWithoutReceipts: 2,
-    baseFeePerGas: '0x3b9aca00',
-    transactions: [
-      {
-        hash: '0xcccc000000000000000000000000000000000000000000000000000000000003',
-        nonce: 2,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: null,
-        value: '0x0',
-        gas: 200_000,
-        input: '0x6060604052',
-        type: '0x2',
-        maxFeePerGas: '0x3b9aca00',
-        maxPriorityFeePerGas: '0x3b9aca00',
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000003',
-        blockNumber: 2,
-        transactionIndex: 0,
-        chainId: 1,
-        v: '0x1',
-        r: '0x' + 'e'.repeat(64),
-        s: '0x' + 'f'.repeat(64),
-      },
-    ],
-    receipts: [
-      {
-        transactionHash: '0xcccc000000000000000000000000000000000000000000000000000000000003',
-        transactionIndex: 0,
-        blockHash: '0x0000000000000000000000000000000000000000000000000000000000000003',
-        blockNumber: 2,
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: null,
-        cumulativeGasUsed: 100_000,
-        gasUsed: 100_000,
-        contractAddress: '0x1234000000000000000000000000000000000001',
-        logsBloom: '0x' + '0'.repeat(512),
-        status: '0x1',
-        type: '0x2',
-        effectiveGasPrice: '0x3b9aca00', // 1 gwei = 1_000_000_000 wei
-        logs: [],
-      },
-    ],
-  },
-];
+    sha3Uncles: `0x${'1'.repeat(64)}`,
+    logsBloom: `0x${'0'.repeat(512)}`,
+    difficulty: '1',
+    totalDifficulty: String(blockNumber + 1),
+    baseFeePerGas: '1000000000',
+    transactionHashes: [tx.hash],
+    transactions: [tx],
+    receipts: [receipt],
+    traces,
+    ...overrides,
+  };
+}
+
+const block0Hash = `0x${'1'.repeat(64)}`;
+const block1Hash = `0x${'2'.repeat(64)}`;
+const block2Hash = `0x${'3'.repeat(64)}`;
+
+const block0TxHash = `0x${String(1).repeat(64).slice(0, 64)}`;
+const block1TxHash = `0x${String(2).repeat(64).slice(0, 64)}`;
+const block2TxHash = `0x${String(3).repeat(64).slice(0, 64)}`;
 
 export const mockTraces: Record<number, Trace[]> = {
-  0: [
-    {
-      transactionHash: '0xaaaa000000000000000000000000000000000000000000000000000000000001',
-      transactionPosition: 0,
-      type: 'call',
-      action: {
-        from: '0xd3cda913deb6f0967b8e12d7d56c2f3dcb5f3a4',
-        to: '0xab5801a7d398351b8be11c439e05c5b3259aec9b',
-        value: '0xde0b6b3a7640000',
-        gas: '0x5208',
-        input: '0x',
-      },
-      result: { output: '0x', gasUsed: '0x5208' },
-      subtraces: 0,
-      traceAddress: [],
-    },
-  ],
+  0: [makeTrace(0, block0TxHash)],
   1: [],
-  2: [],
+  2: [
+    makeTrace(2, block2TxHash, { type: 'create', action: { from: ADDRESS_A, gas: '0x30d40', init: '0x6060604052' } }),
+  ],
 };
 
-/** Used for reorganisation tests — blocks 0 and 1 are same, block 2 has different hash */
-export const mockRealChainBlocks: Block[] = [
-  mockBlocks[0]!,
-  mockBlocks[1]!,
-  {
-    ...mockBlocks[2]!,
-    hash: '0x0000000000000000000000000000000000000000000000000000000000000099',
-    parentHash: '0x0000000000000000000000000000000000000000000000000000000000000002',
-  },
+export const mockBlocks: Block[] = [
+  makeBlock(0, block0Hash, `0x${'0'.repeat(64)}`, mockTraces[0]!),
+  makeBlock(1, block1Hash, block0Hash, mockTraces[1]!, {
+    transactions: [makeTransaction(1, block1TxHash, block1Hash, { value: '0', gasPrice: '1100000000' })],
+    transactionHashes: [block1TxHash],
+    receipts: [makeReceipt(1, block1Hash, block1TxHash, [], { effectiveGasPrice: '1100000000' })],
+  }),
+  makeBlock(2, block2Hash, block1Hash, mockTraces[2]!, {
+    transactions: [
+      makeTransaction(2, block2TxHash, block2Hash, {
+        to: null,
+        value: '0',
+        gas: 100_000,
+        input: '0x6060604052',
+      }),
+    ],
+    transactionHashes: [block2TxHash],
+    receipts: [
+      makeReceipt(2, block2Hash, block2TxHash, [], {
+        to: null,
+        gasUsed: 100_000,
+        cumulativeGasUsed: 100_000,
+        contractAddress: CONTRACT_A,
+      }),
+    ],
+  }),
 ];
 
-export const mockFakeChainBlocks: Block[] = [...mockBlocks];
+export function cloneBlock(block: Block): Block {
+  return {
+    ...block,
+    uncles: [...block.uncles],
+    withdrawals: block.withdrawals ? block.withdrawals.map((item) => ({ ...item })) : undefined,
+    transactionHashes: block.transactionHashes ? [...block.transactionHashes] : undefined,
+    transactions: block.transactions
+      ? block.transactions.map((tx) => ({
+          ...tx,
+          accessList: tx.accessList
+            ? tx.accessList.map((entry) => ({ ...entry, storageKeys: [...entry.storageKeys] }))
+            : undefined,
+          blobVersionedHashes: tx.blobVersionedHashes ? [...tx.blobVersionedHashes] : undefined,
+        }))
+      : undefined,
+    receipts: block.receipts
+      ? block.receipts.map((receipt) => ({
+          ...receipt,
+          logs: receipt.logs.map((log) => ({ ...log, topics: [...log.topics] })),
+        }))
+      : undefined,
+    traces: block.traces
+      ? block.traces.map((trace) => ({
+          ...trace,
+          action: { ...trace.action },
+          result: trace.result ? { ...trace.result } : undefined,
+          traceAddress: [...trace.traceAddress],
+        }))
+      : undefined,
+  };
+}

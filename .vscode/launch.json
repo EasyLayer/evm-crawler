@@ -9,7 +9,7 @@
           "runtimeArgs": [
             "--inspect-brk"
           ],
-          "cwd": "${workspaceFolder}/e2e-tests",
+          "cwd": "${workspaceFolder}/e2e-tests-server",
           "program": "${workspaceFolder}/node_modules/.bin/jest",
           "args": [
             "--runInBand",
