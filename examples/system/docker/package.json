@@ -7,6 +7,7 @@
   "scripts": {
     "clear": "yarn clear:node_modules",
     "clear:node_modules": "rimraf node_modules",
+    "lint:fix": "eslint -c eslint.config.mjs \"src/**/*.ts\" --fix",
     "start": "node -r ts-node/register/transpile-only src/main.ts",
     "docker:build": "docker build -t evm-crawler-docker-example .",
     "docker:run": "docker run --rm --add-host=host.docker.internal:host-gateway --name evm-crawler-docker-example --env-file .env -p 3000:3000 evm-crawler-docker-example",
@@ -15,7 +16,7 @@
     "docker:logs": "docker logs -f evm-crawler-docker-example"
   },
   "dependencies": {
-    "@easylayer/common": "1.2.1",
+    "@easylayer/common": "1.3.2",
     "@easylayer/evm-crawler": "0.0.3",
     "@easylayer/transport-sdk": "1.3.0",
     "dotenv": "16.4.5",

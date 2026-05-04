@@ -1,25 +1,35 @@
-# EasyLayer EVM Crawler Documentation
+# @easylayer/evm-crawler
 
-<b>EVM Crawler</b> is a self-hosted application that enables monitoring of the blockchain state both historically and in real-time
+A self-hosted framework for building custom EVM blockchain indexers.  
+Define what data you care about, point it at an EVM RPC provider or your own node, and get a live + historical event stream with automatic reorg handling.
+
+Built on **Event Sourcing + CQRS**. Ships **CJS and ESM Node bundles** and keeps the same model/query API across HTTP, WS, TCP, and IPC transports.
 
 ---
 
 <!-- KEY-FEATURES-START -->
 ## Overview
 
-EVM Crawler is a powerful self-hosted application designed for monitoring and analyzing the EVM blockchain. It provides developers with a flexible framework to track blockchain state both historically and in real-time, enabling them to build custom blockchain analytics and monitoring solutions.
+EVM Crawler lets you build application-specific read models on top of Ethereum-style chains without coupling your business logic to raw RPC calls.
 
-The application is built on modern architectural patterns including CQRS (Command Query Responsibility Segregation) and Event Sourcing, ensuring reliable and consistent data processing. It offers multiple transport options (RPC, WebSocket, TCP, IPC) for accessing blockchain data and supports both SQLite and PostgreSQL for event storage.
+You define one or more models, `bootstrap()` the crawler, and the framework handles:
+- historical sync from any start height,
+- live block processing,
+- event persistence in SQLite or PostgreSQL,
+- reorg rollback and replay,
+- transport exposure for queries and live events.
+
+It is designed for **self-hosted** usage and works with providers such as QuickNode/Chainstack or with your own node.
 
 ## Key Features
-- **Self-Hosted Architecture**: Full control over deployment and customization
-- **Flexible Node Connectivity**: Works with your own EVM node or providers like QuickNode
-- **Real-time & Historical Processing**: Process blockchain data from any block height with automatic reorganization support
-- **Custom Model Definition**: Define your own data models using TypeScript/JavaScript
-- **Event-Based Processing**: Create and handle custom events to track blockchain state changes
-- **Multiple Transport Options**: Access data through HTTP, WebSocket, TCP, or IPC protocols
-- **Database Flexibility**: Choose between SQLite (managed) or PostgreSQL (self-configured)
-
+- **Historical + real-time indexing** from any block height
+- **Automatic reorg handling** with rollback/replay of affected aggregates
+- **Class-based and declarative models**
+- **HTTP, WebSocket, TCP, and IPC transports**
+- **SQLite or PostgreSQL EventStore**
+- **Custom query handlers** for your own API surface
+- **EVM-specific runtime options** for receipts, traces, mempool, and provider types
+- **Multiple provider adapters** via `ethersjs` or `web3js`
 <!-- KEY-FEATURES-END -->
 
 <!-- PERFORMANCE-START -->
@@ -30,360 +40,392 @@ EVM Crawler is engineered for high-speed operation, but actual performance is pr
 <!-- PERFORMANCE-END -->
 
 <!-- SETUP-START -->
-## Setup
-
-### Prerequisites
-- [Node.js](https://nodejs.org/) version 17 or higher
-- A EVM self node or QuickNode provider URL
-
-### Installation
-
-Install the package using your preferred package manager:
+## Installation
 
 ```bash
-# Using npm
 npm install @easylayer/evm-crawler
-
-# Using yarn
+# or
 yarn add @easylayer/evm-crawler
 ```
 
-### Basic Usage
+**Requirements:** Node.js ≥ 20 · TypeScript (recommended) · EVM RPC provider or your own node
 
-The [@easylayer/evm-crawler](https://www.npmjs.com/@easylayer.io/evm-crawler) package exports a `bootstrap` function that initializes the crawler. Here's a basic setup:
+---
 
-```tsx title="main.ts"
+## How It Works
+
+1. You define a **Model** — either a class or a declarative descriptor.
+2. `bootstrap()` starts the crawler. It restores existing aggregates from the EventStore, syncs missing history if needed, and then follows new blocks in real time.
+3. For each block, your model's `processBlock()` logic or declarative reducers run.
+4. Your model emits domain events via `applyEvent()`.
+5. Events are persisted and can be queried or streamed to clients via the transport layer.
+
+---
+
+## Quick Start (Node.js)
+
+### 1. Create a class-based model
+
+```ts
+// model.ts
+import { Model } from '@easylayer/evm-crawler';
+import type { Block, Transaction } from '@easylayer/evm';
+
+export class NativeTransfers extends Model {
+  static override modelId = 'native-transfers';
+
+  public balances = new Map<string, string>();
+
+  async processBlock(ctx: { block: Block }) {
+    const block = ctx.block;
+    const deltas: Array<{ address: string; amount: string }> = [];
+
+    for (const tx of block.transactions ?? []) {
+      if (!tx.to) continue;
+      if (tx.value === '0') continue;
+      deltas.push({ address: tx.to, amount: tx.value });
+    }
+
+    if (deltas.length > 0) {
+      this.applyEvent('NativeTransferObserved', block.blockNumber, { deltas });
+    }
+  }
+
+  protected onNativeTransferObserved(e: any) {
+    for (const { address, amount } of e.payload.deltas) {
+      const prev = BigInt(this.balances.get(address) ?? '0');
+      this.balances.set(address, (prev + BigInt(amount)).toString());
+    }
+  }
+}
+```
+
+### 2. Bootstrap
+
+```ts
+// main.ts
 import { bootstrap } from '@easylayer/evm-crawler';
-import Model from './model';
+import { NativeTransfers } from './model';
 
 bootstrap({
-  Models: [Model],
-  rpc: true,
+  Models: [NativeTransfers],
 });
 ```
 
-### Creating a Custom Model
+### 3. Configure via `.env`
 
-Define your custom model by extending the base `Model` class:
+```bash
+# Minimum required
+PROVIDER_NETWORK_RPC_URLS=https://your-rpc-endpoint
+PROVIDER_TYPE=ethersjs
+NETWORK_CHAIN_ID=1
 
-```tsx title="model.ts"
-import { BasicEvent, EventBasePayload, Model, Block } from '@easylayer/evm-crawler';
+# Optional — historical sync vs live-only mode
+START_BLOCK_HEIGHT=19000000     # omit to start from current tip and follow only new blocks
+MAX_BLOCK_HEIGHT=19001000       # inclusive upper bound; omit for no limit
 
-// Define your custom event
-export class YourCustomEvent<T extends EventBasePayload> extends BasicEvent<T> {};
+# EventStore (default: SQLite)
+EVENTSTORE_DB_TYPE=sqlite
 
-// Create your model
-export default class CustomModel extends Model {
-    address: string = '0x...';
-    balance: string = '0';
+# Transport (enable at least one for clients to connect)
+TRANSPORT_HTTP_HOST=0.0.0.0
+TRANSPORT_HTTP_PORT=3000
 
-    constructor() {
-      super('uniq-model-id'); // This ID will be used to fetch events and state
+# EVM-specific defaults
+TRACES_ENABLED=false
+NETWORK_SUPPORTS_TRACES=false
+NETWORK_VERIFY_TRIE=false
+```
+
+### 4. Query the state
+
+```bash
+curl -X POST http://localhost:3000/query   -H "Content-Type: application/json"   -d '{"name":"GetModelsQuery","dto":{"modelIds":["native-transfers"]}}'
+```
+
+---
+
+## Models
+
+### Declarative Model (less boilerplate)
+
+Use declarative models when your logic is mostly “scan a block/log/trace/transaction and reduce state”.
+
+```ts
+import type { DeclarativeModel } from '@easylayer/evm-crawler';
+import { compileStateModelEVM } from '@easylayer/evm-crawler';
+
+const TransfersModel: DeclarativeModel<any> = {
+  modelId: 'native-transfers',
+
+  state: {
+    balances: new Map<string, string>(),
+  },
+
+  sources: {
+    async ['block.transactions'](ctx) {
+      if (!ctx.tx.to) return;
+      if (ctx.tx.value === '0') return;
+      return { address: ctx.tx.to, amount: ctx.tx.value };
+    },
+
+    async block(ctx) {
+      const deltas = ctx.locals['block.transactions'] ?? [];
+      if (deltas.length > 0) {
+        ctx.applyEvent('NativeTransferObserved', ctx.block.blockNumber, { deltas });
+      }
+    },
+  },
+
+  reducers: {
+    NativeTransferObserved(state, e) {
+      for (const { address, amount } of e.payload.deltas) {
+        const prev = BigInt(state.balances.get(address) ?? '0');
+        state.balances.set(address, (prev + BigInt(amount)).toString());
+      }
+    },
+  },
+};
+
+export const NativeTransfers = compileStateModelEVM(TransfersModel);
+```
+
+### Class-Based Model (more control)
+
+Use class-based models when you need full control over iteration, cross-transaction logic, mixed block/receipt/trace handling, or custom mempool behaviour.
+
+```ts
+import { Model } from '@easylayer/evm-crawler';
+import type { Block } from '@easylayer/evm';
+
+export class ContractCallTracker extends Model {
+  static override modelId = 'contract-calls';
+
+  public calls = 0;
+
+  async processBlock(ctx: { block: Block }) {
+    for (const trace of ctx.block.traces ?? []) {
+      if (trace.type !== 'call') continue;
+      this.applyEvent('ContractCallObserved', ctx.block.blockNumber, {
+        transactionHash: trace.transactionHash,
+        traceType: trace.type,
+      });
     }
+  }
 
-    public async parseBlock({ block }: { block: Block }) {
-      // Implement this method to process blocks
-      // Create custom events using this.apply(new YourCustomEvent(data))
-    }
-
-    private onYourCustomEvent({ payload }: YourCustomEvent) {
-      // Handle your custom event
-      // Update model state based on the event payload
-      // See examples in the repository for detailed implementations
-    }
+  protected onContractCallObserved() {
+    this.calls += 1;
+  }
 }
 ```
 
-### Bootstrap Configuration
+**Rule of thumb:** use **declarative** for straightforward block / transaction / log / trace scanning, and **class-based** when you need full control over branching, custom state mutation, or more complex EVM-specific logic.
 
-The `bootstrap` function accepts the following configuration options:
+---
 
-```typescript
-interface BootstrapOptions {
-  Models: ModelType[];      // Array of your custom models
-  rpc?: boolean;           // Enable RPC transport
-  ws?: boolean;            // Enable WebSocket transport
-  tcp?: boolean;           // Enable TCP transport
-  ipc?: boolean;           // Enable IPC transport
-}
+## Bootstrap Options
+
+```ts
+bootstrap({
+  Models: [],          // Your model classes / compiled declarative models
+  QueryHandlers: [],   // Custom query handler classes
+  EventHandlers: [],   // Custom event handler classes
+  Providers: [],       // Additional NestJS providers
+});
 ```
 
-You can enable multiple transports simultaneously and define multiple models for different business logic domains.
-<!-- SETUP-END -->
+All fields are optional. You can bootstrap with an empty `Models` array if you only want system aggregates and transport access.
+
+---
+
+## Custom Query Handlers
+
+```ts
+import { IQueryHandler, QueryHandler } from '@easylayer/common/cqrs';
+
+class GetNativeBalanceQuery {
+  constructor(public readonly addresses: string[]) {}
+}
+
+@QueryHandler(GetNativeBalanceQuery)
+class GetNativeBalanceQueryHandler implements IQueryHandler<GetNativeBalanceQuery> {
+  constructor(private readonly modelFactory: any) {}
+
+  async execute(query: GetNativeBalanceQuery) {
+    const model = await this.modelFactory.restoreModel(NativeTransfers);
+    return query.addresses.map((address) => ({
+      address,
+      balance: model.balances.get(address) ?? '0',
+    }));
+  }
+}
+
+bootstrap({
+  Models: [NativeTransfers],
+  QueryHandlers: [GetNativeBalanceQueryHandler],
+});
+```
+
+Query it:
+```bash
+curl -X POST http://localhost:3000/query   -H "Content-Type: application/json"   -d '{"name":"GetNativeBalanceQuery","dto":{"addresses":["0xabc..."]}}'
+```
+
+---
+
+## EVM-Specific Runtime Notes
+
+### Historical sync vs live-only
+- If `START_BLOCK_HEIGHT` is set, the crawler syncs from that height.
+- If `START_BLOCK_HEIGHT` is omitted, the crawler starts from the current tip and follows new blocks only.
+- `START_BLOCK_HEIGHT=0` means start from **genesis**.
+- `MAX_BLOCK_HEIGHT` is an **inclusive height ceiling**, not a “number of blocks” counter.
+
+### Receipts and traces
+- `TRACES_ENABLED=false` by default.
+- `NETWORK_SUPPORTS_TRACES=false` by default.
+- Enable trace loading only when your provider really supports it.
+- Trace loading strategy is controlled by `NETWORK_TRACE_STRATEGY` (`auto`, `debug-trace`, `parity-trace`).
+- Receipt loading strategy is controlled by `NETWORK_RECEIPTS_STRATEGY` (`auto`, `block-receipts`, `transaction-receipts`).
+
+### Trie verification
+- `NETWORK_VERIFY_TRIE=false` by default.
+- Enable it only when you explicitly want block-level verification of trie-related data and your provider behaviour is known to be compatible with it.
+
+### Mempool
+- If no mempool providers are configured, mempool mode is disabled.
+- Configure mempool explicitly via `PROVIDER_MEMPOOL_RPC_URLS` and/or `PROVIDER_MEMPOOL_WS_URLS`.
+- Use `mempoolTick()` in class-based models if you need pending-transaction state.
+
+### Provider adapters
+- `PROVIDER_TYPE=ethersjs` is the default path.
+- `PROVIDER_TYPE=web3js` is supported when you need that provider stack instead.
+
+### Reorgs
+- Reorg handling is automatic.
+- System aggregates (`network`, `mempool`) and your custom models are rolled back and replayed as needed.
+
+---
+
+## Common Network Examples
+
+### Ethereum Mainnet
+
+```bash
+PROVIDER_NETWORK_RPC_URLS=https://your-ethereum-rpc
+PROVIDER_TYPE=ethersjs
+NETWORK_CHAIN_ID=1
+NETWORK_NATIVE_CURRENCY_SYMBOL=ETH
+NETWORK_NATIVE_CURRENCY_DECIMALS=18
+NETWORK_BLOCK_TIME_SECONDS=12
+NETWORK_TARGET_BLOCK_TIME_MS=12000
+NETWORK_HAS_EIP1559=true
+NETWORK_HAS_WITHDRAWALS=true
+NETWORK_HAS_BLOB_TRANSACTIONS=true
+TRACES_ENABLED=false
+NETWORK_SUPPORTS_TRACES=false
+```
+
+### BNB Smart Chain (BSC)
+
+```bash
+PROVIDER_NETWORK_RPC_URLS=https://your-bsc-rpc
+PROVIDER_TYPE=ethersjs
+NETWORK_CHAIN_ID=56
+NETWORK_NATIVE_CURRENCY_SYMBOL=BNB
+NETWORK_NATIVE_CURRENCY_DECIMALS=18
+NETWORK_BLOCK_TIME_SECONDS=3
+NETWORK_TARGET_BLOCK_TIME_MS=3000
+NETWORK_HAS_EIP1559=false
+NETWORK_HAS_WITHDRAWALS=false
+NETWORK_HAS_BLOB_TRANSACTIONS=false
+TRACES_ENABLED=false
+NETWORK_SUPPORTS_TRACES=false
+```
+
+### Polygon PoS
+
+```bash
+PROVIDER_NETWORK_RPC_URLS=https://your-polygon-rpc
+PROVIDER_TYPE=ethersjs
+NETWORK_CHAIN_ID=137
+NETWORK_NATIVE_CURRENCY_SYMBOL=POL
+NETWORK_NATIVE_CURRENCY_DECIMALS=18
+NETWORK_BLOCK_TIME_SECONDS=2
+NETWORK_TARGET_BLOCK_TIME_MS=2000
+NETWORK_HAS_EIP1559=true
+NETWORK_HAS_WITHDRAWALS=false
+NETWORK_HAS_BLOB_TRANSACTIONS=false
+TRACES_ENABLED=false
+NETWORK_SUPPORTS_TRACES=false
+```
+
+---
 
 <!-- TRANSPORT-API-REFERENCE-START -->
-# Transport API Reference
+## Transport API Reference
 
-This document describes how clients can interact with the application via RPC, IPC, WS and TCP transports.
+Clients can query current model state or fetch events over any enabled transport. HTTP is the simplest path for backend integrations; WS/TCP/IPC are useful for long-lived clients and live event streaming.
 
----
+### Built-in queries
 
-<details>
-<summary><strong>1. HTTP RPC (Queries Only)</strong></summary>
+The crawler exposes two built-in query types:
 
-The HTTP RPC transport allows clients to perform data retrieval queries using a standardized JSON-RPC-like protocol.
+1. **GetModelsQuery** — restore one or more aggregates at the latest or specified block height
+2. **FetchEventsQuery** — fetch persisted events with filtering and pagination
 
-### Connection Details
+#### `GetModelsQuery`
 
-```http
-POST https://localhost:3000/
-Content-Type: application/json
-```
-
-### Available Queries
-
-The application provides two main query types:
-
-1. **GetModels** - Retrieve model states at a specific block height
-2. **FetchEvents** - Retrieve events with pagination and filtering
-
-### GetModels Query
-
-Retrieves the current state of one or more models at a specified block height.
-
-#### Request Format
 ```json
 {
-  "requestId": "uuid-1001",
-  "action": "query",
-  "payload": {
-    "constructorName": "GetModels",
-    "dto": {
-      "modelIds": ["model1", "model2"],
-      "filter": {
-        "blockHeight": 100
-      }
+  "name": "GetModelsQuery",
+  "dto": {
+    "modelIds": ["native-transfers"],
+    "filter": {
+      "blockHeight": 19000010
     }
   }
 }
 ```
 
-#### Parameters
+#### `FetchEventsQuery`
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| modelIds | string[] | Yes | Array of model IDs to retrieve |
-| filter.blockHeight | number | No | Block height to get state at (defaults to latest) |
-
-#### Response Format
 ```json
 {
-  "requestId": "uuid-1001",
-  "action": "queryResponse",
-  "payload": [
-    {
-      "aggregateId": "model1",
-      "state": { /* model state */ }
-    },
-    {
-      "aggregateId": "model2",
-      "state": { /* model state */ }
-    }
-  ]
-}
-```
-
-### FetchEvents Query
-
-Retrieves events for one or more models with pagination and filtering options.
-
-#### Request Format
-```json
-{
-  "requestId": "uuid-1002",
-  "action": "query",
-  "payload": {
-    "constructorName": "FetchEvents",
-    "dto": {
-      "modelIds": ["model1"],
-      "filter": {
-        "blockHeight": 100
-      },
-      "paging": {
-        "limit": 10,
-        "offset": 0
-      }
+  "name": "FetchEventsQuery",
+  "dto": {
+    "modelIds": ["native-transfers"],
+    "filter": {},
+    "paging": {
+      "limit": 10,
+      "offset": 0
     }
   }
 }
 ```
 
-#### Parameters
+### HTTP example
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| modelIds | string[] | Yes | Array of model IDs to fetch events for |
-| filter.blockHeight | number | No | Filter events by block height |
-| filter.version | number | No | Filter events by version |
-| paging.limit | number | No | Number of events to return (default: 10) |
-| paging.offset | number | No | Number of events to skip (default: 0) |
-
-#### Response Format
-```json
-{
-  "requestId": "uuid-1002",
-  "action": "queryResponse",
-  "payload": {
-    "events": [
-      {
-        "aggregateId": "model1",
-        "version": 5,
-        "blockHeight": 100,
-        "data": { /* event data */ }
-      }
-    ],
-    "total": 100
-  }
-}
+```bash
+curl -X POST http://localhost:3000/query   -H "Content-Type: application/json"   -d '{"name":"FetchEventsQuery","dto":{"modelIds":["network"],"filter":{},"paging":{"limit":10}}}'
 ```
 
-### Error Handling
+### WebSocket / IPC / TCP
 
-Both queries return errors in the following format:
+For streaming transports, use [`@easylayer/transport-sdk`](https://www.npmjs.com/package/@easylayer/transport-sdk) and subscribe to domain events such as `EvmNetworkBlocksAddedEvent` or your own model events.
 
-```json
-{
-  "requestId": "uuid-1003",
-  "action": "error",
-  "payload": {
-    "error": {
-      "message": "Error description"
-    }
-  }
-}
-```
+Typical flow:
+1. connect to the chosen transport,
+2. subscribe to the event names you care about,
+3. issue `GetModelsQuery` / `FetchEventsQuery` over the same client,
+4. keep the connection alive for live events.
 
-</details>
+### Recommended transport usage
+- **HTTP** — simple backend queries and admin endpoints
+- **WS** — browser or server clients that need live events
+- **IPC** — child-process embedding in Node.js
+- **TCP** — custom internal service integrations
 
----
-
-<details>
-<summary><strong>2. Event Streaming (WS, TCP, IPC)</strong></summary>
-
-The application supports real-time event streaming through multiple transport protocols. All transports implement the same event communication patterns and use the same query interfaces as HTTP RPC.
-
-### Event Communication Patterns
-
-#### 1. Outgoing Events (Application → Client)
-
-| Action | Description | Payload |
-|--------|-------------|---------|
-| `event` | Single event | `{ constructorName: string; dto: any }` |
-| `batch` | Multiple events | `Array<{ constructorName: string; dto: any }>` |
-| `ping` | Connection check | `undefined` |
-| `error` | Error notification | `{ message: string }` |
-| `queryResponse` | Response to query | Same as HTTP RPC responses |
-
-#### 2. Incoming Events (Client → Application)
-
-| Action | Description | Payload |
-|--------|-------------|---------|
-| `pong` | Response to ping | `undefined` |
-| `query` | Query request | Same as HTTP RPC requests |
-
-### Available Queries
-
-All transports support the same queries as HTTP RPC:
-
-1. **GetModels Query**
-```json
-{
-  "requestId": "uuid-1",
-  "action": "query",
-  "payload": {
-    "constructorName": "GetModels",
-    "dto": {
-      "modelIds": ["model1", "model2"],
-      "filter": {
-        "blockHeight": 100
-      }
-    }
-  }
-}
-```
-
-2. **FetchEvents Query**
-```json
-{
-  "requestId": "uuid-2",
-  "action": "query",
-  "payload": {
-    "constructorName": "FetchEvents",
-    "dto": {
-      "modelIds": ["model1"],
-      "filter": {
-        "blockHeight": 100
-      },
-      "paging": {
-        "limit": 10,
-        "offset": 0
-      }
-    }
-  }
-}
-```
-
-### Connection Lifecycle
-
-1. Client establishes connection
-2. Application sends `ping` events periodically
-3. Client must respond with `pong` to maintain connection
-4. After successful `pong`, application starts streaming events
-
-### Message Interfaces
-
-```ts
-// Outgoing messages (Application → Client)
-interface OutgoingMessage<A extends string = string, P = any> {
-  requestId?: string;
-  action: A;
-  payload?: P;
-}
-
-// Incoming messages (Client → Application)
-interface IncomingMessage<A extends string = string, P = any> {
-  requestId: string;
-  action: A;
-  payload?: P;
-}
-```
-
-### Transport-Specific Details
-
-</details>
-
----
-
-<details>
-<summary><strong>2.1 WebSocket</strong></summary>
-
-#### Connection URL
-```
-ws://localhost:3000/events
-```
-
-</details>
-
----
-
-<details>
-<summary><strong>2.2 IPC</strong></summary>
-
-#### Connection Details
-IPC transport is only available when the application runs as a child process. The communication happens through Node.js child process IPC channel.
-
-```ts
-import { fork } from 'node:child_process';
-
-// Start the application as a child process
-const child = fork('./easylayer.js', [], {
-  stdio: ['inherit', 'inherit', 'inherit', 'ipc']
-});
-```
-
-</details>
-
----
 <!-- TRANSPORT-API-REFERENCE-END -->
 
 <!-- CONFIG-START -->
@@ -393,87 +435,81 @@ const child = fork('./easylayer.js', [], {
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `NODE_ENV` | string | Node environment | `"development"` | ✅ |
-| `HTTP_HOST` | string | Http Server host |  |  |
-| `HTTP_PORT` | number | Http Server port (0 or undefined to disable) |  |  |
-| `HTTP_SSL_ENABLED` | boolean | Enable SSL for HTTP server | `false` |  |
-| `HTTP_SSL_KEY_PATH` | string | Path to SSL private key file for HTTP server |  |  |
-| `HTTP_SSL_CERT_PATH` | string | Path to SSL certificate file for HTTP server |  |  |
-| `HTTP_SSL_CA_PATH` | string | Path to SSL CA file for HTTP server |  |  |
-| `WS_HOST` | string | WebSocket server host | `"0.0.0.0"` |  |
-| `WS_PATH` | string | WebSocket Server path | `"/"` |  |
-| `WS_PORT` | number | WebSocket Server port (0 or undefined to disable) |  |  |
-| `HTTP_MAX_MESSAGE_SIZE` | number | Maximum message size for HTTP transport in bytes | `1048576` | ✅ |
-| `WS_MAX_MESSAGE_SIZE` | number | Maximum message size for WebSocket transport in bytes | `1048576` | ✅ |
-| `IPC_MAX_MESSAGE_SIZE` | number | Maximum message size for IPC transport in bytes | `1048576` | ✅ |
-| `HEARTBEAT_TIMEOUT` | number | Heartbeat timeout in milliseconds | `3000` | ✅ |
-| `CONNECTION_TIMEOUT` | number | Connection timeout in milliseconds | `2000` | ✅ |
-| `WS_CORS_ORIGIN` | string | CORS origin for WebSocket | `"*"` |  |
-| `WS_CORS_CREDENTIALS` | boolean | CORS credentials for WebSocket | `false` |  |
-| `WS_SSL_ENABLED` | boolean | Enable SSL for WebSocket | `false` |  |
-| `WS_SSL_KEY_PATH` | string | Path to SSL private key file for WebSocket |  |  |
-| `WS_SSL_CERT_PATH` | string | Path to SSL certificate file for WebSocket |  |  |
-| `WS_SSL_CA_PATH` | string | Path to SSL CA file for WebSocket |  |  |
-| `WS_TRANSPORTS` | array | WebSocket transports (comma-separated: websocket,polling) | `"websocket,polling"` |  |
+| `APPLICATION_NAME` | string | Application name used for eventstore naming and logging |  | ✅ |
+| `LOG_LEVEL` | string | Log level: trace | debug | info | warn | error | fatal |  |  |
+| `TRACE` | undefined | Enable trace-level logging |  |  |
 
 ### BlocksQueueConfig
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `EVM_CRAWLER_BLOCKS_QUEUE_LOADER_STRATEGY_NAME` | string | Loader strategy name for the EVM blocks queue. | `"subscribe"` | ✅ |
+| `BLOCKS_QUEUE_LOADER_STRATEGY_NAME` | string | Block loading strategy: rpc | subscribe-ws |  | ✅ |
+| `BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT` | number | Base number of blocks to preload in parallel. |  | ✅ |
+| `MEMPOOL_LOADER_STRATEGY_NAME` | string | Mempool loading strategy: subscribe-ws | txpool-content |  | ✅ |
+
+### BootstrapConfig
+
+| Property | Type | Description | Default | Required |
+|---|---|---|---|:---:|
 
 ### BusinessConfig
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `EVM_CRAWLER_MAX_BLOCK_HEIGHT` | number | Maximum block height to be processed. Defaults to infinity. | `9007199254740991` | ✅ |
-| `EVM_CRAWLER_START_BLOCK_HEIGHT` | number | The block height from which processing begins. If not set, only listen to new blocks. |  |  |
-| `EVM_CRAWLER_NETWORK_CHAIN_ID` | number | Chain ID of the EVM network |  | ✅ |
-| `EVM_CRAWLER_NETWORK_NATIVE_CURRENCY_SYMBOL` | string | Symbol of the native currency |  | ✅ |
-| `EVM_CRAWLER_NETWORK_NATIVE_CURRENCY_DECIMALS` | number | Decimals of the native currency |  | ✅ |
-| `EVM_CRAWLER_NETWORK_BLOCK_TIME` | number | Average block time in seconds |  | ✅ |
-| `EVM_CRAWLER_NETWORK_HAS_EIP1559` | boolean | Whether the network supports EIP-1559 |  | ✅ |
-| `EVM_CRAWLER_NETWORK_HAS_WITHDRAWALS` | boolean | Whether the network supports withdrawals |  | ✅ |
-| `EVM_CRAWLER_NETWORK_HAS_BLOB_TRANSACTIONS` | boolean | Whether the network supports blob transactions |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_BLOCK_SIZE` | number | Maximum execution block size in bytes (transactions only) |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_BLOCK_WEIGHT` | number | Maximum total block weight in bytes (including blob data) |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_GAS_LIMIT` | number | Maximum gas limit per block |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_TRANSACTION_SIZE` | number | Maximum transaction size in bytes |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MIN_GAS_PRICE` | number | Minimum gas price in wei |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_BASE_FEE_PER_GAS` | number | Maximum base fee per gas in wei for EIP-1559 networks |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_PRIORITY_FEE_PER_GAS` | number | Maximum priority fee per gas in wei for EIP-1559 networks |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_BLOB_GAS_PER_BLOCK` | number | Maximum blob gas per block for EIP-4844 networks |  | ✅ |
-| `EVM_CRAWLER_NETWORK_TARGET_BLOB_GAS_PER_BLOCK` | number | Target blob gas per block for EIP-4844 networks |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_CODE_SIZE` | number | Maximum contract code size in bytes |  | ✅ |
-| `EVM_CRAWLER_NETWORK_MAX_INIT_CODE_SIZE` | number | Maximum init code size in bytes |  | ✅ |
-| `EVM_CRAWLER_RATE_LIMIT_MAX_REQUESTS_PER_SECOND` | number | Maximum requests per second |  | ✅ |
-| `EVM_CRAWLER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS` | number | Maximum concurrent requests |  | ✅ |
-| `EVM_CRAWLER_RATE_LIMIT_MAX_BATCH_SIZE` | number | Maximum batch size for parallel requests |  | ✅ |
-| `EVM_CRAWLER_RATE_LIMIT_BATCH_DELAY_MS` | number | Delay between batches in milliseconds |  | ✅ |
+| `NETWORK_CHAIN_ID` | number | EVM chain ID. This is crawler/runtime config, not a preset from @easylayer/evm. |  | ✅ |
+| `NETWORK_NATIVE_CURRENCY_SYMBOL` | string | Native currency symbol for the target EVM chain. |  |  |
+| `NETWORK_NATIVE_CURRENCY_DECIMALS` | number | Native currency decimals for the target EVM chain. |  |  |
+| `NETWORK_BLOCK_TIME_SECONDS` | number | Average block time in seconds. |  |  |
+| `NETWORK_HAS_EIP1559` | boolean | Whether the target EVM chain supports EIP-1559 baseFeePerGas fields. |  |  |
+| `NETWORK_HAS_WITHDRAWALS` | boolean | Whether the target EVM chain exposes post-Shanghai withdrawals fields. |  |  |
+| `NETWORK_HAS_BLOB_TRANSACTIONS` | boolean | Whether the target EVM chain exposes blob transaction / EIP-4844 fields. |  |  |
+| `NETWORK_MAX_BLOCK_SIZE` | number | Max block size in bytes. Runtime parameter supplied by evm-crawler. |  | ✅ |
+| `NETWORK_MAX_BLOCK_WEIGHT` | number | Max block weight/queue weight in bytes. Runtime parameter supplied by evm-crawler. |  | ✅ |
+| `NETWORK_MAX_GAS_LIMIT` | number | Max gas limit for the target EVM chain. |  |  |
+| `NETWORK_MAX_TRANSACTION_SIZE` | number | Max serialized transaction size in bytes. |  |  |
+| `NETWORK_MIN_GAS_PRICE` | string | Minimum gas price in wei as decimal string. |  |  |
+| `NETWORK_MAX_BASE_FEE_PER_GAS` | string | Optional max base fee per gas in wei as decimal string. |  |  |
+| `NETWORK_MAX_PRIORITY_FEE_PER_GAS` | string | Optional max priority fee per gas in wei as decimal string. |  |  |
+| `NETWORK_MAX_BLOB_GAS_PER_BLOCK` | number | Optional max blob gas per block. |  |  |
+| `NETWORK_TARGET_BLOB_GAS_PER_BLOCK` | number | Optional target blob gas per block. |  |  |
+| `NETWORK_MAX_CODE_SIZE` | number | Max EVM contract bytecode size. |  |  |
+| `NETWORK_MAX_INIT_CODE_SIZE` | number | Max EVM initcode size. |  |  |
+| `NETWORK_SUPPORTS_TRACES` | boolean | Whether the configured provider/chain should support debug/trace RPC APIs. |  |  |
+| `NETWORK_RECEIPTS_STRATEGY` | string | Receipts loading strategy: auto | block-receipts | transaction-receipts. |  |  |
+| `NETWORK_TRACE_STRATEGY` | string | Trace loading strategy: auto | debug-trace | parity-trace. |  |  |
+| `NETWORK_TARGET_BLOCK_TIME_MS` | number | Target block time in milliseconds. |  | ✅ |
+| `START_BLOCK_HEIGHT` | number | Start indexing from this block height. Undefined = current tip. |  |  |
+| `MAX_BLOCK_HEIGHT` | number | Stop indexing at this block height. Undefined = no limit. |  |  |
+| `NETWORK_VERIFY_TRIE` | boolean | Enable transactionsRoot/receiptsRoot verification for loaded blocks. Disabled by default. |  |  |
+| `TRACES_ENABLED` | boolean | Load trace data for each block. Provider must support trace APIs; otherwise startup/load must fail. |  |  |
+| `MEMPOOL_PENDING_TX_TTL_MS` | number | TTL for pending mempool transactions in milliseconds. |  |  |
+| `MEMPOOL_MAX_PENDING_TX_COUNT` | number | Maximum number of pending transactions to track in mempool aggregate. |  |  |
 
 ### EventStoreConfig
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `EVM_CRAWLER_EVENTSTORE_DB_NAME` | string | For SQLite: folder path where the database file will be created; For Postgres: name of the database to connect to. | `"resolve(process.cwd(), 'eventstore"` | ✅ |
-| `EVM_CRAWLER_EVENTSTORE_DB_TYPE` | string | Type of database for the eventstore. | `"sqlite"` | ✅ |
-| `EVM_CRAWLER_EVENTSTORE_DB_SYNCHRONIZE` | boolean | Automatic synchronization that creates or updates tables and columns. Use with caution. | `true` | ✅ |
-| `EVM_CRAWLER_EVENTSTORE_DB_HOST` | string | Host for the eventstore database connection. |  |  |
-| `EVM_CRAWLER_EVENTSTORE_DB_PORT` | number | Port for the eventstore database connection. |  |  |
-| `EVM_CRAWLER_EVENTSTORE_DB_USERNAME` | string | Username for the eventstore database connection. |  |  |
-| `EVM_CRAWLER_EVENTSTORE_DB_PASSWORD` | string | Password for the eventstore database connection. |  |  |
+| `EVENTSTORE_DB_NAME` | string | For SQLite: folder path where the database file will be created; For Postgres: name of the database to connect to. | `"resolve(process.cwd(), eventstore"` | ✅ |
+| `EVENTSTORE_DB_TYPE` | string | Type of database for the eventstore. | `"sqlite"` | ✅ |
+| `EVENTSTORE_DB_SYNCHRONIZE` | boolean | Automatic synchronization that creates or updates tables and columns. Use with caution. | `true` | ✅ |
+| `EVENTSTORE_DB_HOST` | string | Host for the eventstore database connection. |  |  |
+| `EVENTSTORE_DB_PORT` | number | Port for the eventstore database connection. |  |  |
+| `EVENTSTORE_DB_USERNAME` | string | Username for the eventstore database connection. |  |  |
+| `EVENTSTORE_DB_PASSWORD` | string | Password for the eventstore database connection. |  |  |
+| `EVENTSTORE_SQLITE_RUNTIME_BASE_URL` | string | Base URL for @sqlite.org/sqlite-wasm browser runtime files. Only used in browser (sqlite-opfs) mode. The directory must contain index.mjs, sqlite3.wasm, and required worker runtime files such as sqlite3-worker1.mjs. |  |  |
 
 ### ProvidersConfig
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `EVM_CRAWLER_PROVIDER_NETWORK_RPC_URLS` | string | HTTP URL of the EVM-like network provider node |  | ✅ |
-| `EVM_CRAWLER_NETWORK_PROVIDER_NODE_WS_URL` | string | WS URL of the EVM-like network provider node |  |  |
-| `EVM_CRAWLER_NETWORK_PROVIDER_TYPE` | string | Type of the network provider |  | ✅ |
-| `EVM_CRAWLER_NETWORK_PROVIDER_REQUEST_TIMEOUT` | number | Request timeout in milliseconds |  | ✅ |
-| `EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS` | number | Maximum concurrent requests |  | ✅ |
-| `EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE` | number | Maximum batch size for parallel requests |  | ✅ |
-| `EVM_CRAWLER_NETWORK_PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS` | number | Delay between batches in milliseconds |  | ✅ |
+| `PROVIDER_TYPE` | string | Provider type: ethersjs | web3js |  | ✅ |
+| `PROVIDER_NETWORK_RPC_URLS` | undefined | Network RPC HTTP URLs (comma-separated) |  |  |
+| `PROVIDER_NETWORK_WS_URLS` | undefined | Network WebSocket URLs (comma-separated). Required for subscribe-ws block strategy. |  |  |
+| `PROVIDER_MEMPOOL_RPC_URLS` | undefined | Mempool RPC HTTP URLs (comma-separated). Enables txpool-content mempool tracking. |  |  |
+| `PROVIDER_MEMPOOL_WS_URLS` | undefined | Mempool WebSocket URLs (comma-separated). Enables subscribe-ws mempool tracking. |  |  |
+| `PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE` | number | Maximum batch size for RPC requests. |  | ✅ |
+| `PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS` | number | Maximum concurrent RPC requests. |  | ✅ |
+| `PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS` | number | Delay between RPC request batches in milliseconds. |  | ✅ |
 
 
 <!-- CONFIG-END -->

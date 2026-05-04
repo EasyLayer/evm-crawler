@@ -3,7 +3,10 @@ import type { ProcessBlockExecutionContext } from '@easylayer/evm-crawler';
 
 const DEFAULT_WATCH_ADDRESSES = ['0xd8da6bf26964af9d7eed9e03e53415d37aa96045'];
 
-export interface NativeBalanceSnapshot { address: string; balanceWei: string; }
+export interface NativeBalanceSnapshot {
+  address: string;
+  balanceWei: string;
+}
 
 export class NativeBalanceWatcher extends Model {
   static override modelId = 'native-balance-watcher';
@@ -21,7 +24,9 @@ export class NativeBalanceWatcher extends Model {
     for (const item of payload.balances ?? []) this.balances.set(normalizeAddress(item.address), item.balanceWei);
   }
 
-  public getBalance(address: string): string { return this.balances.get(normalizeAddress(address)) ?? '0'; }
+  public getBalance(address: string): string {
+    return this.balances.get(normalizeAddress(address)) ?? '0';
+  }
   public getAllBalances(): Record<string, string> {
     const result: Record<string, string> = {};
     for (const address of this.wallets) result[address] = this.balances.get(address) ?? '0';
@@ -29,7 +34,10 @@ export class NativeBalanceWatcher extends Model {
   }
 }
 
-export async function loadBalancesAtBlock(ctx: { block: { blockNumber: number }; services: any }, addresses: Iterable<string>): Promise<NativeBalanceSnapshot[]> {
+export async function loadBalancesAtBlock(
+  ctx: { block: { blockNumber: number }; services: any },
+  addresses: Iterable<string>
+): Promise<NativeBalanceSnapshot[]> {
   const provider = await ctx.services?.nodeProvider?.connectionManager?.getActiveProvider?.();
   const httpClient = provider?.httpClient;
   if (!httpClient) throw new Error('Active EVM HTTP provider is not available in processBlock context');
@@ -57,8 +65,15 @@ async function getBalanceWei(httpClient: any, address: string, blockTag: number)
 
 function readWatchAddresses(): string[] {
   const raw = process.env.WATCH_ADDRESSES ?? DEFAULT_WATCH_ADDRESSES.join(',');
-  const addresses = raw.split(',').map((item) => normalizeAddress(item)).filter(Boolean);
+  const addresses = raw
+    .split(',')
+    .map((item) => normalizeAddress(item))
+    .filter(Boolean);
   return addresses.length ? Array.from(new Set(addresses)) : DEFAULT_WATCH_ADDRESSES;
 }
 
-function normalizeAddress(value: string): string { return String(value ?? '').trim().toLowerCase(); }
+function normalizeAddress(value: string): string {
+  return String(value ?? '')
+    .trim()
+    .toLowerCase();
+}

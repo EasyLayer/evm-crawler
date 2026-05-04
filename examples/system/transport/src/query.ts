@@ -1,7 +1,9 @@
 import { IQueryHandler, QueryHandler } from '@easylayer/common/cqrs';
 import { ModelFactoryService } from '@easylayer/evm-crawler';
 import { NativeBalanceWatcher } from './model';
-export class GetBalanceQuery { constructor(public readonly addresses: string[] = []) {} }
+export class GetBalanceQuery {
+  constructor(public readonly addresses: string[] = []) {}
+}
 @QueryHandler(GetBalanceQuery)
 export class GetBalanceQueryHandler implements IQueryHandler<GetBalanceQuery> {
   constructor(private readonly modelFactory: ModelFactoryService) {}
