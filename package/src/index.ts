@@ -1,3 +1,2 @@
-export { bootstrap } from './bootstrap';
-export { Model, BasicEvent } from './framework';
-export type { ModelType, EventBasePayload } from './framework';
+// Node (default) entry point.
+export * from './node';

@@ -1,110 +1,124 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@easylayer/common/cqrs';
-import { EventStoreWriteRepository } from '@easylayer/common/eventstore';
-import { AppLogger, RuntimeTracker } from '@easylayer/common/logger';
-import { AddBlocksBatchCommand, Network, BlockchainProviderService, BlockchainValidationError } from '@easylayer/evm';
-import { NetworkModelFactoryService } from '../services';
-import { Model, ModelType, ModelFactoryService } from '../../framework';
-import { MetricsService } from '../../metrics.service';
-import { BusinessConfig } from '../../config';
+import { EventStoreWriteService } from '@easylayer/common/eventstore';
+import {
+  AddBlocksBatchCommand,
+  BlockchainProviderService,
+  BlockchainValidationError,
+  type Block,
+  type LightBlock,
+  type Mempool,
+} from '@easylayer/evm';
+import {
+  MempoolModelFactoryService,
+  MempoolReadService,
+  NetworkModelFactoryService,
+  NetworkReadService,
+} from '../services';
+import { ModelFactoryService, Model, NormalizedModelCtor, ProcessBlockExecutionContext } from '../framework';
 
+export function deepFreeze<T>(obj: T): T {
+  Object.getOwnPropertyNames(obj).forEach((name) => {
+    const val = (obj as any)[name];
+    if (val && typeof val === 'object') deepFreeze(val);
+  });
+  return Object.freeze(obj);
+}
+
+@Injectable()
 @CommandHandler(AddBlocksBatchCommand)
 export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBatchCommand> {
+  private readonly logger = new Logger(AddBlocksBatchCommandHandler.name);
+
   constructor(
-    private readonly log: AppLogger,
     private readonly networkModelFactory: NetworkModelFactoryService,
     private readonly blockchainProvider: BlockchainProviderService,
-    private readonly eventStore: EventStoreWriteRepository,
-    private readonly metricsService: MetricsService,
-    @Inject('FrameworkModelsConstructors')
-    private Models: ModelType[],
-    @Inject('FrameworModelFactory')
+    private readonly eventStore: EventStoreWriteService,
+    @Inject('FrameworkModelsConstructors') private readonly Models: NormalizedModelCtor[],
     private readonly modelFactoryService: ModelFactoryService,
-    private readonly businessConfig: BusinessConfig
+    private readonly networkReadService: NetworkReadService,
+    private readonly mempoolReadService: MempoolReadService,
+    private readonly mempoolModelFactory: MempoolModelFactoryService
   ) {}
 
-  @RuntimeTracker({ showMemory: false, warningThresholdMs: 1000, errorThresholdMs: 3000 })
-  async execute({ payload }: AddBlocksBatchCommand) {
+  async execute({ payload }: AddBlocksBatchCommand): Promise<void> {
     const { batch, requestId } = payload;
 
-    const networkModel: Network = await this.networkModelFactory.initModel();
-
-    let models = this.Models.map((ModelCtr) => this.modelFactoryService.createNewModel(ModelCtr));
-
-    await this.metricsService.track('framework_restore_models', async () => {
-      const result: Model[] = [];
-      for (const model of models) {
-        result.push(await this.modelFactoryService.restoreModel(model));
-      }
-      models = result;
-    });
-
     try {
-      await networkModel.addBlocks({
-        requestId,
-        blocks: batch,
-      });
-
-      for (let block of batch) {
-        await this.metricsService.track('framework_parse_block', async () => {
-          for (const model of models) {
-            await model.parseBlock({
-              block,
-              services: {
-                provider: this.blockchainProvider,
-              },
-              networkConfig: this.blockchainProvider.config,
-            });
-          }
-        });
+      const networkModel = await this.networkModelFactory.initModel();
+      const models: Model[] = [];
+      for (const M of this.Models) {
+        models.push(await this.modelFactoryService.restoreByCtor(M));
       }
 
-      await this.metricsService.track(
-        'system_eventstore_save',
-        async () => await this.eventStore.save([...models, networkModel])
-      );
+      const lightBlocks: LightBlock[] = batch.map((b: Block) => ({
+        blockNumber: b.blockNumber,
+        hash: b.hash,
+        parentHash: b.parentHash,
+        transactionsRoot: b.transactionsRoot,
+        receiptsRoot: b.receiptsRoot,
+        stateRoot: b.stateRoot,
+        transactions: (b.transactions || []).map((tx: any) => tx.hash || tx),
+        receipts: (b.receipts || []).map((r: any) => r.transactionHash || r),
+      }));
 
-      const stats = {
-        blocksHeight: batch[batch.length - 1]?.blockNumber,
-        blocksLength: batch?.length,
-        blocksSize: batch.reduce((sum: number, block: any) => sum + (block?.size || 0), 0),
-        txLength: batch.reduce((sum: number, block: any) => sum + (block?.transactions?.length || 0), 0),
-        frameworkRestoreModels: this.metricsService.getMetric('framework_restore_models'),
-        frameworkParseBlockTotal: this.metricsService.getMetric('framework_parse_block'),
-        systemEventstoreSaveTotal: this.metricsService.getMetric('system_eventstore_save'),
-      };
+      await networkModel.addBlocks({ requestId, blocks: lightBlocks, logger: this.logger });
 
-      this.log.info('Blocks successfull loaded', { args: { blocksHeight: stats.blocksHeight } });
-      this.log.debug('Blocks successfull loaded', { args: { ...stats } });
+      for (const block of batch) {
+        // traces is already part of block (block.traces), accessible inside processBlock via ctx.block.traces
+        const frozen = deepFreeze(block);
+        const ctx: ProcessBlockExecutionContext = {
+          block: frozen,
+          network: this.networkReadService,
+          mempool: this.mempoolReadService,
+          services: {
+            nodeProvider: this.blockchainProvider,
+            networkModelService: this.networkModelFactory,
+            userModelService: this.modelFactoryService,
+          },
+          networkConfig: this.blockchainProvider.config,
+        };
+        for (const model of models) await model.processBlock(ctx);
+      }
+
+      let mempoolModel: Mempool | undefined;
+      if (this.blockchainProvider.isMempoolAvailable) {
+        const confirmedHashes = batch.flatMap((b: Block) =>
+          (b.transactions || []).map((tx: any) => tx.hash || tx).filter(Boolean)
+        );
+        if (confirmedHashes.length > 0) {
+          mempoolModel = await this.mempoolModelFactory.initModel();
+          await mempoolModel.removeConfirmed({
+            requestId,
+            hashes: confirmedHashes,
+            height: batch[batch.length - 1]!.blockNumber,
+          });
+        }
+      }
+
+      await this.eventStore.save(mempoolModel ? [...models, networkModel, mempoolModel] : [...models, networkModel]);
+      this.logger.verbose('Blocks saved into eventstore');
     } catch (error) {
       if (error instanceof BlockchainValidationError) {
+        const networkModel = await this.networkModelFactory.initModel();
+        const models = this.Models.map((M) => this.modelFactoryService.createNewModel(M));
         await networkModel.reorganisation({
           reorgHeight: networkModel.lastBlockHeight,
           requestId,
           blocks: [],
           service: this.blockchainProvider,
+          logger: this.logger,
         });
-
-        // IMPORTANT: set blockHeight from last state of Network
         const reorgHeight = networkModel.lastBlockHeight;
-
         await this.eventStore.rollback({
           modelsToRollback: models,
           blockHeight: reorgHeight,
           modelsToSave: [networkModel],
         });
-
-        models = await Promise.all(
-          this.Models.map((ModelCtr) =>
-            this.modelFactoryService.restoreModel(this.modelFactoryService.createNewModel(ModelCtr))
-          )
-        );
-
-        this.log.info('Blocks successfull reorganized', { args: { blockHeight: reorgHeight } });
+        this.logger.debug('Blocks reorganized', { args: { reorgHeight, requestId } });
         return;
       }
-
-      this.log.error('Error while load blocks', { args: { error } });
+      this.logger.warn('Error adding blocks', { args: { message: (error as any)?.message } });
       throw error;
     }
   }

@@ -1,139 +1,158 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@easylayer/common/cqrs';
-import { EventStoreWriteRepository } from '@easylayer/common/eventstore';
-import { AppLogger } from '@easylayer/common/logger';
-import { InitNetworkCommand, Network, BlockchainProviderService } from '@easylayer/evm';
+import { EventStoreWriteService } from '@easylayer/common/eventstore';
+import { BlockchainProviderService, InitNetworkCommand, Network } from '@easylayer/evm';
 import { NetworkModelFactoryService } from '../services';
 import { BusinessConfig } from '../../config';
-import { ConsolePromptService } from '../services/console-prompt.service';
-import { ModelFactoryService, ModelType } from '../../framework';
+import { ModelFactoryService, NormalizedModelCtor } from '../framework';
+import type { BootstrapConfig } from '../../config/bootstrap-config';
 
+@Injectable()
 @CommandHandler(InitNetworkCommand)
 export class InitNetworkCommandHandler implements ICommandHandler<InitNetworkCommand> {
+  private readonly logger = new Logger(InitNetworkCommandHandler.name);
+
   constructor(
-    private readonly log: AppLogger,
-    private readonly eventStore: EventStoreWriteRepository,
+    private readonly eventStore: EventStoreWriteService,
     private readonly networkModelFactory: NetworkModelFactoryService,
     private readonly businessConfig: BusinessConfig,
-    private readonly blockchainProviderService: BlockchainProviderService,
-    private readonly consolePromptService: ConsolePromptService,
-    @Inject('FrameworkModelsConstructors')
-    private Models: ModelType[],
-    @Inject('FrameworModelFactory')
-    private readonly modelFactoryService: ModelFactoryService
+    private readonly blockchainProvider: BlockchainProviderService,
+    @Inject('ConsolePromptService') private readonly consolePromptService: any,
+    @Inject('FrameworkModelsConstructors') private readonly Models: NormalizedModelCtor[],
+    private readonly modelFactoryService: ModelFactoryService,
+    @Inject('BootstrapConfig') private readonly bootstrapConfig: BootstrapConfig
   ) {}
 
-  async execute({ payload }: InitNetworkCommand) {
-    const { requestId } = payload;
-
-    // Get current network height for listen strategy
-    const currentNetworkHeight = await this.blockchainProviderService.getCurrentBlockHeight();
-
-    const networkModel: Network = await this.networkModelFactory.initModel();
-
-    // Get configured start height (can be undefined)
-    const configStartHeight = this.businessConfig.EVM_CRAWLER_START_BLOCK_HEIGHT;
-
-    // Get current block height from the model (last processed block or undefined if empty)
-    const currentDbHeight = networkModel.currentBlockHeight;
+  async execute({ payload }: InitNetworkCommand): Promise<void> {
+    const { requestId, indexedHeight } = payload;
+    const networkModel = await this.networkModelFactory.initModel();
+    const currentNetworkHeight = await this.blockchainProvider.getCurrentBlockHeightFromNetwork();
+    const configStartHeight = this.businessConfig.START_BLOCK_HEIGHT;
+    const bootstrapLastBlockHeight = this.bootstrapConfig.lastBlockHeight;
+    const indexedCheckpointHeight = indexedHeight >= 0 ? indexedHeight : undefined;
+    const externalCheckpointHeight = bootstrapLastBlockHeight ?? indexedCheckpointHeight;
 
     try {
+      const alignedNetworkModel =
+        externalCheckpointHeight !== undefined
+          ? await this.alignToExternalCheckpoint({ networkModel, externalCheckpointHeight, requestId })
+          : networkModel;
+
       const finalStartHeight = await this.determineStartHeight(
-        currentDbHeight,
+        alignedNetworkModel.lastBlockHeight,
         configStartHeight,
-        currentNetworkHeight
+        currentNetworkHeight,
+        externalCheckpointHeight
       );
 
-      // Initialize the network with the determined start height
-      // Note: finalStartHeight is the last indexed block height
-      // init() will use this directly as blockHeight in the event
-      await networkModel.init({
+      await alignedNetworkModel.init({
         requestId,
         startHeight: finalStartHeight,
+        currentNetworkHeight,
+        logger: this.logger,
       });
-
-      await this.eventStore.save(networkModel);
-
-      this.log.info('Network successfully initialized', {
-        args: {
-          lastIndexedHeight: finalStartHeight,
-          nextBlockToProcess: finalStartHeight + 1,
-          currentNetworkHeight,
-        },
-      });
-    } catch (error) {
-      if ((error as any)?.message === 'DATA_RESET_REQUIRED') {
-        // Handle database reset in catch block
-        this.log.info('Clearing database as requested by user');
-
-        // Create all models that need to be cleared
-        const models = this.Models.map((ModelCtr) => this.modelFactoryService.createNewModel(ModelCtr));
-
-        // Use rollback with blockHeight = -1 to clear all data from all tables
+      await this.eventStore.save(alignedNetworkModel);
+      this.logger.debug('Network initialized', { args: { startHeight: finalStartHeight, currentNetworkHeight } });
+    } catch (error: any) {
+      if (error?.message === 'DATA_RESET_REQUIRED') {
+        this.logger.log('Clearing database as requested by user');
+        const models = this.Models.map((M) => this.modelFactoryService.createNewModel(M));
+        await networkModel.clearChain({ requestId });
         await this.eventStore.rollback({
           modelsToRollback: [...models, networkModel],
-          blockHeight: -1, // Clear everything
+          blockHeight: -1,
+          modelsToSave: [networkModel],
         });
-
-        // Publish event that database was cleared (this will trigger saga to reinitialize)
-        // This event is NOT saved to eventstore, only published to trigger saga
-        await networkModel.clearChain({ requestId });
-
-        // Commit this event to trigger the saga (without eventstore)
-        await networkModel.commit();
-
-        this.log.info('Database cleared successfully, saga will reinitialize network');
-
+        this.logger.log('Database cleared, saga will reinitialize network');
         return;
       }
-
-      this.log.error('Error while initializing Network', { args: { error } });
+      this.logger.error('Error initializing Network', { args: { message: error?.message } });
       throw error;
     }
   }
 
+  private async alignToExternalCheckpoint({
+    networkModel,
+    externalCheckpointHeight,
+    requestId,
+  }: {
+    networkModel: Network;
+    externalCheckpointHeight: number;
+    requestId: string;
+  }): Promise<Network> {
+    if (externalCheckpointHeight < -1) {
+      throw new Error('lastBlockHeight cannot be less than -1');
+    }
+
+    const currentDbHeight = networkModel.lastBlockHeight;
+    const isEmpty = currentDbHeight < 0;
+
+    if (isEmpty || currentDbHeight === externalCheckpointHeight) {
+      return networkModel;
+    }
+
+    if (currentDbHeight > externalCheckpointHeight) {
+      this.logger.warn('EventStore is ahead of external checkpoint — rolling back write models', {
+        module: 'network-init',
+        args: {
+          currentDbHeight,
+          externalCheckpointHeight,
+          requestId,
+          action: 'rollback_to_external_checkpoint',
+          models: this.Models.map((ModelCtr) => ModelCtr.name),
+        },
+      });
+
+      const models = this.Models.map((ModelCtr) => this.modelFactoryService.createNewModel(ModelCtr));
+      await this.eventStore.rollback({
+        modelsToRollback: [...models, networkModel],
+        blockHeight: externalCheckpointHeight,
+      });
+
+      const restoredNetworkModel = await this.networkModelFactory.initModel();
+      this.logger.log('EventStore rollback to external checkpoint completed', {
+        module: 'network-init',
+        args: { currentDbHeight, externalCheckpointHeight, restoredDbHeight: restoredNetworkModel.lastBlockHeight },
+      });
+      return restoredNetworkModel;
+    }
+
+    throw new Error(
+      `External checkpoint (${externalCheckpointHeight}) is ahead of local EventStore (${currentDbHeight}). ` +
+        'Refusing to continue to avoid read-model gaps. Restore the matching EventStore backup, use a new read-model prefix, or run an explicit read-model rollback recovery command.'
+    );
+  }
+
   private async determineStartHeight(
-    currentDbHeight: number | undefined,
+    currentDbHeight: number,
     configStartHeight: number | undefined,
-    currentNetworkHeight: number
+    currentNetworkHeight: number,
+    externalCheckpointHeight: number | undefined
   ): Promise<number> {
-    // Case 1: Database is empty - first launch
-    if (currentDbHeight === undefined) {
-      if (configStartHeight === undefined) {
-        // No config - listen mode: start from current network height
-        return currentNetworkHeight - 1;
-      } else {
-        // Config set - historical mode: start from configured height
-        return configStartHeight - 1;
-      }
+    const isEmpty = currentDbHeight < 0;
+
+    if (externalCheckpointHeight !== undefined) {
+      if (isEmpty) return externalCheckpointHeight;
+      if (currentDbHeight === externalCheckpointHeight) return currentDbHeight;
+      throw new Error(
+        `Local EventStore height (${currentDbHeight}) does not match external checkpoint (${externalCheckpointHeight}) after checkpoint alignment`
+      );
     }
 
-    // Case 2: Database has data
-    if (configStartHeight === undefined) {
-      // No config - continue from where we left off
-      return currentDbHeight;
+    if (isEmpty) {
+      if (configStartHeight === undefined) return currentNetworkHeight - 1;
+      return configStartHeight - 1;
     }
 
-    // Config set - check for conflicts
-    if (configStartHeight <= currentDbHeight) {
-      // Allow reprocessing - just continue from current DB height
-      return currentDbHeight;
-    }
+    if (configStartHeight === undefined) return currentDbHeight;
+    if (configStartHeight <= currentDbHeight) return currentDbHeight;
 
     if (configStartHeight > currentDbHeight + 1) {
-      // Conflict: gap between DB and config
-      const userConfirmed = await this.consolePromptService.askDataResetConfirmation(
-        configStartHeight,
-        currentDbHeight
-      );
-      if (!userConfirmed) {
-        this.log.info('Network initialization cancelled by user');
-        throw new Error('Network initialization cancelled by user');
-      }
+      const confirmed = await this.consolePromptService.askDataResetConfirmation(configStartHeight, currentDbHeight);
+      if (!confirmed) throw new Error('Network initialization cancelled by user');
       throw new Error('DATA_RESET_REQUIRED');
     }
 
-    // No conflict - continue with current DB height
     return currentDbHeight;
   }
 }

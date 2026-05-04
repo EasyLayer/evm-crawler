@@ -2,9 +2,9 @@
   "packages": [
     "examples/**",
     "package",
-    "e2e-tests",
+    "e2e-tests-server",
     "integration-tests"
   ],
-  "version": "0.0.3",
+  "version": "0.1.0",
   "npmClient": "yarn"
 }

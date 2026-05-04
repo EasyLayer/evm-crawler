@@ -1,236 +1,232 @@
 import { resolve } from 'node:path';
+import type { Server as HttpServer } from 'node:http';
+import { createServer } from 'node:http';
 import { config } from 'dotenv';
-import type { INestApplication, INestApplicationContext } from '@nestjs/common';
+import type { INestApplicationContext } from '@nestjs/common';
 import { bootstrap } from '@easylayer/evm-crawler';
+import { EvmNetworkInitializedEvent, EvmNetworkBlocksAddedEvent, BlockchainProviderService } from '@easylayer/evm';
 import { Client } from '@easylayer/transport-sdk';
-import { SQLiteService } from '../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../+helpers/clean-data-folder';
-import BlockModel, { AGGREGATE_ID } from './blocks.model';
-import type { NetworkEventStoreRecord, BlocksEventStoreRecord } from './mocks';
-import { networkTableSQL, blocksTableSQL, mockNetworks, mockBlockModel, mockBlocks } from './mocks';
+import BlocksModel, { AGGREGATE_ID } from './blocks.model';
+import { mockBlocks } from './mocks';
 
-// IMPORTANT: We set EVM_CRAWLER_MAX_BLOCK_HEIGHT=2 and add blocks up to this height to the database
-// so that the application will spin but not get new blocks.
+jest.setTimeout(60_000);
 
-describe('/Evm Crawler: HTTP Transport Checks', () => {
-  let dbService!: SQLiteService;
-  let app: INestApplication | INestApplicationContext;
-  let client: Client;
+const originalGetCurrentBlockHeightFromNetwork = BlockchainProviderService.prototype.getCurrentBlockHeightFromNetwork;
 
-  beforeEach(async () => {
-    jest.clearAllMocks();
+function formatHeights(heights: Array<string | number>): number[] {
+  return heights.map((height) => Number(height));
+}
+
+async function getFreePort(host = '127.0.0.1'): Promise<number> {
+  const srv = createServer();
+  await new Promise<void>((r) => srv.listen(0, host, r));
+  const port = (srv.address() as any).port as number;
+  await new Promise<void>((r) => srv.close(() => r()));
+  return port;
+}
+
+// ===== Mocks =====
+
+jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockImplementation(async function (
+  this: BlockchainProviderService
+): Promise<number> {
+  const height = await originalGetCurrentBlockHeightFromNetwork.call(this);
+  return height;
+});
+
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights')
+  .mockImplementation(async (heights: (string | number)[]): Promise<any> => {
+    const blocks = mockBlocks.filter((block) => heights.map(Number).includes(block.blockNumber));
+    return blocks.map((block) => ({
+      hash: block.hash,
+      number: block.blockNumber,
+      size: 1,
+      gasLimit: block.gasLimit,
+      gasUsed: block.gasUsed,
+      gasUsedPercentage: block.gasUsed / block.gasLimit,
+      timestamp: block.timestamp,
+      transactionCount: block.transactions?.length ?? 0,
+      miner: block.miner ?? '0x0',
+      difficulty: (block as any).difficulty ?? '0x0',
+      parentHash: block.parentHash,
+      unclesCount: (block as any).uncles?.length ?? 0,
+    }));
   });
 
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
+  .mockImplementation(async (heights: (string | number)[]) => {
+    const normalizedHeights = formatHeights(heights);
+    const blocks = heights.map((h) => {
+      const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
+      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
+      return blk;
+    });
+    return blocks;
+  });
+
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
+  .mockImplementation(async (heights: (string | number)[]) => {
+    const normalizedHeights = formatHeights(heights);
+    const blocks = heights.map((h) => {
+      const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
+      if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
+      return blk;
+    });
+    return blocks;
+  });
+
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null;
+    return block;
+  });
+
+describe('EVM Crawler: HTTP Transport Integration', () => {
+  let app: INestApplicationContext | undefined;
+  let client!: Client;
+  let webhookSrv: HttpServer | undefined;
+
+  let eventsDeferred: { promise: Promise<void>; resolve: () => void };
+  const expectedEventCount = mockBlocks.length;
+  const receivedBlockAddedEvents: any[] = [];
+  let resolved = false;
+
+  const envBackup: Record<string, string | undefined> = {};
+
   beforeAll(async () => {
-    jest.resetModules();
     jest.useRealTimers();
+    jest.resetModules();
 
-    // Load environment variables
-    config({ path: resolve(process.cwd(), 'src/http-checks/.env') });
+    const makeDeferred = () => {
+      let resolveFn!: () => void;
+      const promise = new Promise<void>((res) => {
+        resolveFn = res;
+      });
+      return { promise, resolve: resolveFn };
+    };
+    eventsDeferred = makeDeferred();
 
-    // Clear the database
+    const envPath = resolve(process.cwd(), 'src/http-checks/.env');
+    const loadedEnv = config({ path: envPath, override: true });
     await cleanDataFolder('eventstore');
 
-    // Initialize the write database
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/ethereum.db') });
-    await dbService.connect();
+    const port = await getFreePort();
+    const host = '127.0.0.1';
+    const webhookUrl = `http://${host}:${port}/events`;
+    const pingUrl = `http://${host}:${port}/ping`;
 
-    await dbService.exec(networkTableSQL);
+    envBackup.TRANSPORT_HTTP_WEBHOOK_URL = process.env.TRANSPORT_HTTP_WEBHOOK_URL;
+    envBackup.TRANSPORT_HTTP_WEBHOOK_PING_URL = process.env.TRANSPORT_HTTP_WEBHOOK_PING_URL;
+    process.env.TRANSPORT_HTTP_WEBHOOK_URL = webhookUrl;
+    process.env.TRANSPORT_HTTP_WEBHOOK_PING_URL = pingUrl;
 
-    for (const rec of mockNetworks as NetworkEventStoreRecord[]) {
-      const payloadSql = JSON.stringify(rec.payload).replace(/'/g, "''");
-      const values = [
-        rec.version,
-        `'${rec.requestId}'`,
-        `'${rec.status}'`,
-        `'${rec.type}'`,
-        `json('${payloadSql}')`,
-        rec.blockHeight,
-      ].join(', ');
-      await dbService.exec(`
-        INSERT INTO network
-          (version, requestId, status, type, payload, blockHeight)
-        VALUES
-          (${values});
-      `);
-    }
-
-    await dbService.exec(blocksTableSQL);
-
-    for (const rec of mockBlockModel as BlocksEventStoreRecord[]) {
-      const payloadSql = JSON.stringify(rec.payload).replace(/'/g, "''");
-      const values = [
-        rec.version,
-        `'${rec.requestId}'`,
-        `'${rec.status}'`,
-        `'${rec.type}'`,
-        `json('${payloadSql}')`,
-        rec.blockHeight,
-      ].join(', ');
-      await dbService.exec(`
-        INSERT INTO ${AGGREGATE_ID}
-          (version, requestId, status, type, payload, blockHeight)
-        VALUES
-          (${values});
-      `);
-    }
-
-    // Close the write database connection after inserting events
-    await dbService.close();
-
-    app = await bootstrap({
-      Models: [BlockModel],
-    });
-
+    const baseUrl = `http://${process.env.TRANSPORT_HTTP_HOST}:${process.env.TRANSPORT_HTTP_PORT}`.replace(/\/+$/, '');
     client = new Client({
       transport: {
         type: 'http',
-        baseUrl: `http://${process.env.HTTP_HOST}:${process.env.HTTP_PORT}`,
+        inbound: { webhookUrl },
+        query: { baseUrl },
       },
     });
+
+    webhookSrv = createServer(client.nodeHttpHandler());
+    await new Promise<void>((r) => webhookSrv!.listen(port, host, r));
+
+    app = await bootstrap({ Models: [BlocksModel] });
+
+    client.subscribe('BlockAddedEvent', async (event: any) => {
+      receivedBlockAddedEvents.push(event);
+      if (!resolved && receivedBlockAddedEvents.length >= expectedEventCount) {
+        resolved = true;
+        eventsDeferred.resolve();
+      }
+    });
+
+    await eventsDeferred.promise;
   });
 
   afterAll(async () => {
-    if (dbService) {
-      // eslint-disable-next-line no-console
-      await dbService.close().catch(console.error);
-    }
-
-    // eslint-disable-next-line no-console
-    await app?.close().catch(console.error);
-
-    // eslint-disable-next-line no-console
-    await client?.destroy().catch(console.error);
+    Object.entries(envBackup).forEach(([k, v]) => {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    });
+    await (client as any)?.close?.().catch(() => undefined);
+    await new Promise<void>((r) => webhookSrv?.close?.(() => r())).catch(() => undefined);
+    await app?.close?.().catch(() => undefined);
+    jest.restoreAllMocks();
   });
 
-  it(`should return the full Network model at the latest block height`, async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'GetModelsQuery',
-      dto: {
-        modelIds: ['network'],
-      },
-    });
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload).toHaveProperty('aggregateId', 'network');
-    expect(payload).toHaveProperty('version', 3);
-    expect(payload).toHaveProperty('blockHeight', 2);
-    expect(payload.payload).toBeDefined();
-    const modelPayload = payload.payload;
-
-    expect(modelPayload.__type).toBeDefined();
-    expect(modelPayload.__type).toBe('Network');
-    expect(modelPayload.chain).toBeDefined();
-    expect(modelPayload.chain.length).toBe(3);
+  it('should get three BlockAddedEvent events', () => {
+    expect(receivedBlockAddedEvents.length).toBe(expectedEventCount);
+    expect(receivedBlockAddedEvents.every((e) => e?.eventType === 'BlockAddedEvent')).toBe(true);
+    expect(receivedBlockAddedEvents.map((e) => e.blockHeight)).toEqual([0, 1, 2]);
   });
 
-  it(`should return the Network model from cache`, async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'GetModelsQuery',
-      dto: {
-        modelIds: ['network'],
-        blockHeight: 2,
-      },
-    });
-
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload.aggregateId).toBe('network');
-    expect(payload.version).toBe(3);
-    expect(payload.blockHeight).toBe(2);
-
-    const modelPayload = payload.payload;
-    expect(modelPayload.__type).toBe('Network');
-    expect(modelPayload.chain.length).toBe(3);
+  it('should return the full Network model at the latest block height', async () => {
+    const [networkModel] = await client.query<any, any>('GetModelsQuery', { modelIds: ['network'] });
+    expect(networkModel.modelId).toBe('network');
+    expect(networkModel.version).toBe(3);
+    expect(networkModel.blockHeight).toBe(2);
+    expect(networkModel.payload.__type).toBe('Network');
+    expect(Array.isArray(networkModel.payload.chain)).toBe(true);
+    expect(networkModel.payload.chain.length).toBe(3);
   });
 
-  it(`should return all events for Network model`, async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'FetchEventsQuery',
-      dto: {
-        modelIds: ['network'],
-      },
-    });
-
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload).toHaveLength(3);
-
-    // 1st event
-    expect(payload[0]).toMatchObject({
-      payload: { aggregateId: 'network', requestId: 'req-1', blockHeight: 0 },
-    });
-    expect(payload[0].constructor.name).toBe('EvmNetworkInitializedEvent');
-
-    // 2nd event
-    expect(payload[1]).toMatchObject({
-      payload: { aggregateId: 'network', requestId: 'req-2', blockHeight: 2, blocks: expect.any(Array) },
-    });
-    expect(payload[1].payload.blocks).toHaveLength(mockBlocks.length);
-    expect(payload[1].constructor.name).toBe('EvmNetworkBlocksAddedEvent');
-
-    // 3rd event
-    expect(payload[2].payload.blockHeight).toBe(2);
-    expect(payload[2].payload.requestId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    );
-    expect(payload[2].constructor.name).toBe('EvmNetworkInitializedEvent');
+  it('should return all events for Network model', async () => {
+    const events = await client.query<any, any>('FetchEventsQuery', { modelIds: ['network'] });
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBe(4);
+    expect(events[0].eventType).toBe(EvmNetworkInitializedEvent.name);
+    expect(events[1].eventType).toBe(EvmNetworkBlocksAddedEvent.name);
+    expect(events[2].eventType).toBe(EvmNetworkBlocksAddedEvent.name);
+    expect(events[3].eventType).toBe(EvmNetworkBlocksAddedEvent.name);
+    expect(events[1].blockHeight).toBe(0);
+    expect(events[2].blockHeight).toBe(1);
+    expect(events[3].blockHeight).toBe(2);
   });
 
   it('should fetch Network model events with pagination', async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'FetchEventsQuery',
-      dto: {
-        modelIds: ['network'],
-        paging: { limit: 2, offset: 1 },
-      },
+    const events = await client.query<any, any>('FetchEventsQuery', {
+      modelIds: ['network'],
+      paging: { limit: 3, offset: 1 },
     });
-
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload).toHaveLength(2);
-    expect(payload[0].payload.requestId).toBe('req-2');
-    expect(payload[0].constructor.name).toBe('EvmNetworkBlocksAddedEvent');
-
-    expect(payload[1].payload.requestId).toMatch(
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-    );
-    expect(payload[1].constructor.name).toBe('EvmNetworkInitializedEvent');
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBe(3);
+    expect(events.every((e: any) => e.eventType === EvmNetworkBlocksAddedEvent.name)).toBe(true);
+    expect(events.map((e: any) => e.blockHeight)).toEqual([0, 1, 2]);
   });
 
-  it(`should return the full BlocksModel at the latest block height`, async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'GetModelsQuery',
-      dto: {
-        modelIds: [AGGREGATE_ID],
-      },
-    });
+  it('should return the full BlocksModel at the latest block height', async () => {
+    const [blocksModel] = await client.query<any, any>('GetModelsQuery', { modelIds: [AGGREGATE_ID] });
+    expect(blocksModel.modelId).toBe(AGGREGATE_ID);
+    expect(blocksModel.version).toBe(3);
+    expect(blocksModel.blockHeight).toBe(2);
+    expect(blocksModel.payload.__type).toBe('BlocksModel');
+    expect(Array.isArray(blocksModel.payload.blocks)).toBe(true);
+    expect(blocksModel.payload.blocks.length).toBe(3);
+  });
 
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload.aggregateId).toBe(AGGREGATE_ID);
-    expect(payload.version).toBe(3);
-    expect(payload.blockHeight).toBe(2);
-
-    const modelPayload = payload.payload;
-    expect(modelPayload.__type).toBe('BlocksModel');
-    expect(Array.isArray(modelPayload.blocks)).toBe(true);
-    expect(modelPayload.blocks).toHaveLength(3);
+  it('should return all events for BlocksModel', async () => {
+    const events = await client.query<any, any>('FetchEventsQuery', { modelIds: [AGGREGATE_ID] });
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBe(3);
+    expect(events.every((e: any) => e.eventType === 'BlockAddedEvent')).toBe(true);
+    expect(events.map((e: any) => e.blockHeight)).toEqual([0, 1, 2]);
   });
 
   it('should fetch BlocksModel events with pagination', async () => {
-    const { requestId, payload } = await client.query('reqid-1', {
-      constructorName: 'FetchEventsQuery',
-      dto: {
-        modelIds: [AGGREGATE_ID],
-        paging: { limit: 2, offset: 1 },
-      },
+    const events = await client.query<any, any>('FetchEventsQuery', {
+      modelIds: [AGGREGATE_ID],
+      paging: { limit: 2, offset: 1 },
     });
-
-    expect(requestId).toBe('reqid-1');
-
-    expect(payload).toHaveLength(2);
-    expect(payload[0].payload.requestId).toBe('req-2');
-    expect(payload[0].constructor.name).toBe('BlockAddedEvent');
+    expect(Array.isArray(events)).toBe(true);
+    expect(events.length).toBe(2);
+    expect(events.every((e: any) => e.eventType === 'BlockAddedEvent')).toBe(true);
+    expect(events.map((e: any) => e.blockHeight)).toEqual([1, 2]);
   });
 });

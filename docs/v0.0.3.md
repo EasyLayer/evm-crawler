@@ -467,7 +467,7 @@ const child = fork('./easylayer.js', [], {
 
 | Property | Type | Description | Default | Required |
 |---|---|---|---|:---:|
-| `EVM_CRAWLER_NETWORK_PROVIDER_NODE_HTTP_URL` | string | HTTP URL of the EVM-like network provider node |  | ✅ |
+| `EVM_CRAWLER_PROVIDER_NETWORK_RPC_URLS` | string | HTTP URL of the EVM-like network provider node |  | ✅ |
 | `EVM_CRAWLER_NETWORK_PROVIDER_NODE_WS_URL` | string | WS URL of the EVM-like network provider node |  |  |
 | `EVM_CRAWLER_NETWORK_PROVIDER_TYPE` | string | Type of the network provider |  | ✅ |
 | `EVM_CRAWLER_NETWORK_PROVIDER_REQUEST_TIMEOUT` | number | Request timeout in milliseconds |  | ✅ |

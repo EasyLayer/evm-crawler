@@ -1,28 +1,29 @@
-import { Injectable } from '@nestjs/common';
 import { Transform } from 'class-transformer';
-import { IsNumber, IsEnum } from 'class-validator';
+import { IsString, IsNumber } from 'class-validator';
 import { JSONSchema } from 'class-validator-jsonschema';
 
-enum BlocksQueueStrategy {
-  PULL_NETWORK_PROVIDER = 'pull',
-  SUBSCRIBE_BLOCKS_PROVIDER = 'subscribe',
-}
-
-@Injectable()
 export class BlocksQueueConfig {
-  @Transform(({ value }) => (value?.length ? value : BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER))
-  @IsEnum(BlocksQueueStrategy)
+  @Transform(({ value }) => (value?.length ? value : 'rpc'))
+  @IsString()
   @JSONSchema({
-    description: 'Loader strategy name for the EVM blocks queue.',
-    default: BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER,
-    enum: Object.values(BlocksQueueStrategy),
+    description: 'Block loading strategy: rpc | subscribe-ws',
+    enum: ['rpc', 'subscribe-ws'],
   })
-  EVM_CRAWLER_BLOCKS_QUEUE_LOADER_STRATEGY_NAME: BlocksQueueStrategy = BlocksQueueStrategy.SUBSCRIBE_BLOCKS_PROVIDER;
+  BLOCKS_QUEUE_LOADER_STRATEGY_NAME: 'rpc' | 'subscribe-ws' = 'rpc';
 
   @Transform(({ value }) => {
     const n = parseInt(value, 10);
     return n === 0 ? 0 : n || 1;
   })
   @IsNumber()
-  EVM_CRAWLER_BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 1;
+  @JSONSchema({ description: 'Base number of blocks to preload in parallel.' })
+  BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT: number = 1;
+
+  @Transform(({ value }) => (value?.length ? value : 'subscribe-ws'))
+  @IsString()
+  @JSONSchema({
+    description: 'Mempool loading strategy: subscribe-ws | txpool-content',
+    enum: ['subscribe-ws', 'txpool-content'],
+  })
+  MEMPOOL_LOADER_STRATEGY_NAME: 'subscribe-ws' | 'txpool-content' = 'subscribe-ws';
 }

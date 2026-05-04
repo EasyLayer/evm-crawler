@@ -1,0 +1,5 @@
+import { build as esbuild } from 'esbuild';
+const external = ['electron', 'better-sqlite3', 'sqlite3', '@nestjs/websockets', '@nestjs/websockets/socket-module', '@nestjs/microservices', '@nestjs/microservices/microservices-module', '@nestjs/platform-express', 'dtrace-provider', 'class-transformer/storage', '@easylayer/common', '@easylayer/common/cqrs', '@easylayer/common/cqrs-transport', '@easylayer/common/network-transport', '@easylayer/common/eventstore', '@easylayer/common/logger', '@easylayer/common/arithmetic', '@easylayer/common/framework', '@easylayer/common/shared-interfaces', '@easylayer/common/exponential-interval-async', '@easylayer/evm', '@easylayer/evm-crawler'];
+await esbuild({ entryPoints: ['electron/main.ts'], bundle: true, platform: 'node', outfile: 'dist/electron/main.js', external, keepNames: true, logLevel: 'info' });
+await esbuild({ entryPoints: ['electron/preload.ts'], bundle: true, platform: 'browser', outfile: 'dist/electron/preload.js', external: ['electron'], keepNames: true, conditions: ['browser', 'module', 'default'], define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'info' });
+console.log('✓ esbuild done');
