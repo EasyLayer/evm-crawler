@@ -1,7 +1,7 @@
 {
   "name": "evm-crawler-docker-example",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "EVM native balance watcher example",
   "type": "commonjs",
   "scripts": {
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@easylayer/common": "1.3.2",
-    "@easylayer/evm-crawler": "0.0.3",
+    "@easylayer/evm-crawler": "0.1.0",
     "@easylayer/transport-sdk": "1.3.0",
     "dotenv": "16.4.5",
     "express": "5.1.0",

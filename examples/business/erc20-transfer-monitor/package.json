@@ -1,7 +1,7 @@
 {
   "name": "erc20-transfer-monitor",
   "private": true,
-  "version": "0.0.3",
+  "version": "0.1.0",
   "description": "EVM business example",
   "type": "commonjs",
   "scripts": {
@@ -12,7 +12,7 @@
   },
   "dependencies": {
     "@easylayer/common": "1.3.2",
-    "@easylayer/evm-crawler": "0.0.3",
+    "@easylayer/evm-crawler": "0.1.0",
     "dotenv": "16.4.5"
   },
   "devDependencies": {
