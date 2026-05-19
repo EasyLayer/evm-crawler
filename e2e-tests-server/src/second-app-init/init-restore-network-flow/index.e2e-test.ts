@@ -6,20 +6,32 @@ import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
-  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
-  .mockImplementation(async (heights) => heights.map((h) => mockBlocks.find((b) => b.blockNumber === Number(h))!));
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights').mockImplementation(async (heights) =>
+  heights.map((height) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    if (!block) throw new Error(`No mock block for height ${height}`);
+    return cloneBlock(block);
+  })
+);
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts').mockImplementation(async (heights) =>
+  heights.map((height) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    if (!block) throw new Error(`No mock block for height ${height}`);
+    return cloneBlock(block);
+  })
+);
 jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(async (heights) =>
   heights.map((h) => ({
     hash: '0x0',
     number: Number(h),
-    size: 3,
+    size: 2,
     gasLimit: 30000000,
     gasUsed: 21000,
     gasUsedPercentage: 0,

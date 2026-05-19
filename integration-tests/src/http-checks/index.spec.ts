@@ -10,13 +10,11 @@ import { cleanDataFolder } from '../+helpers/clean-data-folder';
 import BlocksModel, { AGGREGATE_ID } from './blocks.model';
 import { mockBlocks } from './mocks';
 
-jest.setTimeout(60_000);
-
-const originalGetCurrentBlockHeightFromNetwork = BlockchainProviderService.prototype.getCurrentBlockHeightFromNetwork;
-
-function formatHeights(heights: Array<string | number>): number[] {
-  return heights.map((height) => Number(height));
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
 }
+
+jest.setTimeout(60_000);
 
 async function getFreePort(host = '127.0.0.1'): Promise<number> {
   const srv = createServer();
@@ -28,12 +26,9 @@ async function getFreePort(host = '127.0.0.1'): Promise<number> {
 
 // ===== Mocks =====
 
-jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockImplementation(async function (
-  this: BlockchainProviderService
-): Promise<number> {
-  const height = await originalGetCurrentBlockHeightFromNetwork.call(this);
-  return height;
-});
+jest
+  .spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork')
+  .mockResolvedValue(mockBlocks[mockBlocks.length - 1]!.blockNumber);
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights')
@@ -42,7 +37,7 @@ jest
     return blocks.map((block) => ({
       hash: block.hash,
       number: block.blockNumber,
-      size: 1,
+      size: block.size,
       gasLimit: block.gasLimit,
       gasUsed: block.gasUsed,
       gasUsedPercentage: block.gasUsed / block.gasLimit,
@@ -58,32 +53,28 @@ jest
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
   .mockImplementation(async (heights: (string | number)[]) => {
-    const normalizedHeights = formatHeights(heights);
-    const blocks = heights.map((h) => {
+    return heights.map((h) => {
       const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
+      return cloneBlock(blk);
     });
-    return blocks;
   });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
   .mockImplementation(async (heights: (string | number)[]) => {
-    const normalizedHeights = formatHeights(heights);
-    const blocks = heights.map((h) => {
+    return heights.map((h) => {
       const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
+      return cloneBlock(blk);
     });
-    return blocks;
   });
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
   .mockImplementation(async (height: string | number) => {
-    const block = mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null;
-    return block;
+    const block = mockBlocks.find((b) => b.blockNumber === Number(height));
+    return block ? cloneBlock(block) : null;
   });
 
 describe('EVM Crawler: HTTP Transport Integration', () => {

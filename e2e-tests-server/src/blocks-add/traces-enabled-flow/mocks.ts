@@ -134,7 +134,7 @@ function makeBlock(
     timestamp: 1_700_000_000 + blockNumber * 12,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     nonce: '0x0000000000000000',
     sha3Uncles: `0x${'1'.repeat(64)}`,
     logsBloom: `0x${'0'.repeat(512)}`,

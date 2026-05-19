@@ -12,6 +12,10 @@ import { cleanDataFolder } from '../+helpers/clean-data-folder';
 import BlocksModel, { AGGREGATE_ID, BlockAddedEvent } from './blocks.model';
 import { reorgBlock, mockFakeChainBlocks, mockRealChainBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 const LAST_MOCK_HEIGHT = Math.max(
   ...mockFakeChainBlocks.map((b) => Number(b.blockNumber)),
   ...mockRealChainBlocks.map((b) => Number(b.blockNumber))
@@ -61,7 +65,7 @@ jest
     return hs.map((h) => {
       const blk = pickChain().find((b) => Number(b.blockNumber) === h);
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
+      return cloneBlock(blk);
     });
   });
 
@@ -72,7 +76,7 @@ jest
     return hs.map((h) => {
       const blk = pickChain().find((b) => Number(b.blockNumber) === h);
       if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-      return blk;
+      return cloneBlock(blk);
     });
   });
 

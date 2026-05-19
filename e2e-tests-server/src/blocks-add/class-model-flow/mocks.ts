@@ -3,7 +3,7 @@ import type { Trace } from '@easylayer/evm';
 
 /**
  * 3 realistic EVM blocks in sequential chain order.
- * size=3 so that NETWORK_MAX_BLOCK_WEIGHT=1 causes each block to be a separate iterator batch.
+ * size=3 intentionally exceeds NETWORK_MAX_BLOCK_WEIGHT=1 to verify single-oversized-block forward progress and keep one network batch per block.
  */
 export const mockBlocks: Block[] = [
   {
@@ -25,7 +25,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_000,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {
@@ -102,7 +102,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_012,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {
@@ -163,7 +163,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_024,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {
