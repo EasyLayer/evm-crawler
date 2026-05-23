@@ -11,7 +11,7 @@
     "start": "node -r ts-node/register src/main.ts"
   },
   "dependencies": {
-    "@easylayer/common": "1.3.3",
+    "@easylayer/common": "1.3.4",
     "@easylayer/evm-crawler": "0.1.0",
     "@easylayer/transport-sdk": "1.3.1",
     "dotenv": "16.4.5",
