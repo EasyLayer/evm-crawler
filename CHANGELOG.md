@@ -1,3 +1,9 @@
+## 0.2.0 (2026-05-23)
+
+* chore: added context; ([2063972](https://github.com/EasyLayer/evm-crawler/commit/2063972))
+* chore: upgraded easylayer; ([9ca8994](https://github.com/EasyLayer/evm-crawler/commit/9ca8994))
+* chore: upgraded easylayer; ([325c7a5](https://github.com/EasyLayer/evm-crawler/commit/325c7a5))
+* fix: fixed bugs: mempool tick, mempool model service; mempool framework part; add e2e and unit tests ([806970d](https://github.com/EasyLayer/evm-crawler/commit/806970d))
 ## 0.1.0 (2026-05-04)
 
 * chore: upgraded easylayer v1.3.2 ([b2eb220](https://github.com/EasyLayer/evm-crawler/commit/b2eb220))
