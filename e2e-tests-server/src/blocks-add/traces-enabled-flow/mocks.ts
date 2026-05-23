@@ -158,10 +158,68 @@ const block1TxHash = `0x${String(2).repeat(64).slice(0, 64)}`;
 const block2TxHash = `0x${String(3).repeat(64).slice(0, 64)}`;
 
 export const mockTraces: Record<number, Trace[]> = {
-  0: [makeTrace(0, block0TxHash)],
-  1: [],
+  // Block 0: nested call traces.
+  //   root call → 2 subtraces (call into B, then call into C).
+  // Verifies traceAddress and subtraces propagation through the walker.
+  0: [
+    makeTrace(0, block0TxHash, {
+      type: 'call',
+      subtraces: 2,
+      traceAddress: [],
+    }),
+    makeTrace(0, block0TxHash, {
+      type: 'call',
+      subtraces: 0,
+      traceAddress: [0],
+      action: {
+        from: ADDRESS_A,
+        to: ADDRESS_B,
+        value: '500000000000000000',
+        gas: '0x2710',
+        input: '0x',
+      },
+    }),
+    makeTrace(0, block0TxHash, {
+      type: 'call',
+      subtraces: 0,
+      traceAddress: [1],
+      action: {
+        from: ADDRESS_A,
+        to: CONTRACT_A,
+        value: '0',
+        gas: '0x2710',
+        input: '0xa9059cbb',
+      },
+    }),
+  ],
+  // Block 1: failed (reverted) trace. No result field; error populated.
+  1: [
+    makeTrace(1, block1TxHash, {
+      type: 'call',
+      subtraces: 0,
+      traceAddress: [],
+      result: undefined,
+      error: 'Reverted',
+    } as Partial<Trace>),
+  ],
+  // Block 2: contract creation + a follow-up selfdestruct (suicide).
   2: [
-    makeTrace(2, block2TxHash, { type: 'create', action: { from: ADDRESS_A, gas: '0x30d40', init: '0x6060604052' } }),
+    makeTrace(2, block2TxHash, {
+      type: 'create',
+      action: { from: ADDRESS_A, gas: '0x30d40', init: '0x6060604052' },
+    }),
+    makeTrace(2, block2TxHash, {
+      type: 'suicide',
+      subtraces: 0,
+      traceAddress: [0],
+      action: {
+        from: CONTRACT_A,
+        to: ADDRESS_B,
+        refundAddress: ADDRESS_B,
+        balance: '0',
+      } as any,
+      result: undefined as any,
+    }),
   ],
 };
 

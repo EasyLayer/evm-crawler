@@ -19,6 +19,7 @@ import { AppService } from '../app.service';
 import { getUnifiedEnv } from '../config/unified-env';
 import type { ModelInput, QueryHandlerInput } from '../domain-layer/framework';
 import { buildQueryHandlerClass, splitQueryHandlers } from '../domain-layer/framework';
+import { ModelFactoryService } from '../domain-layer/framework/factory';
 
 export interface BrowserBootstrapOptions {
   Models?: ModelInput[];
@@ -86,7 +87,7 @@ export const bootstrap = async ({
     await appContext.init();
 
     const appService = appContext.get(AppService, { strict: false });
-    const modelFactory = appContext.get('ModelFactoryService', { strict: false });
+    const modelFactory = appContext.get(ModelFactoryService, { strict: false });
     servicesRef.value = { modelFactory };
 
     await appService.init();

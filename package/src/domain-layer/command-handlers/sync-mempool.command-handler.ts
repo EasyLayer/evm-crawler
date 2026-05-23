@@ -2,7 +2,7 @@ import { Injectable, Inject, Logger } from '@nestjs/common';
 import { CommandHandler, ICommandHandler } from '@easylayer/common/cqrs';
 import { EventStoreWriteService } from '@easylayer/common/eventstore';
 import { BlockchainProviderService, SyncMempoolCommand } from '@easylayer/evm';
-import { MempoolModelFactoryService, NetworkReadService, MempoolReadService } from '../services';
+import { MempoolModelFactoryService, NetworkReadService, MempoolTickReadService } from '../services';
 import { ModelFactoryService, Model, NormalizedModelCtor } from '../framework';
 import type { MempoolTickExecutionContext } from '../framework';
 
@@ -19,7 +19,7 @@ export class SyncMempoolCommandHandler implements ICommandHandler<SyncMempoolCom
     private readonly mempoolModelFactory: MempoolModelFactoryService,
     private readonly blockchainProvider: BlockchainProviderService,
     private readonly networkReadService: NetworkReadService,
-    private readonly mempoolReadService: MempoolReadService
+    private readonly mempoolTickReadService: MempoolTickReadService
   ) {}
 
   async execute({ payload }: SyncMempoolCommand): Promise<void> {
@@ -35,18 +35,26 @@ export class SyncMempoolCommandHandler implements ICommandHandler<SyncMempoolCom
     try {
       await mempoolModel.sync({ requestId, service: this.blockchainProvider, logger: this.logger });
 
-      const ctx: MempoolTickExecutionContext = {
-        network: this.networkReadService,
-        mempool: this.mempoolReadService,
-        networkConfig: this.blockchainProvider.config,
-        services: {
-          nodeProvider: this.blockchainProvider,
-          userModelService: this.modelFactoryService,
-        },
-      };
+      // Bind the live mutated mempool aggregate to the tick read service so user
+      // models see the freshly synced state rather than the EventStore-cached
+      // pre-mutation copy. Released in finally regardless of user-code outcome.
+      this.mempoolTickReadService.bind(mempoolModel);
+      try {
+        const ctx: MempoolTickExecutionContext = {
+          network: this.networkReadService,
+          mempool: this.mempoolTickReadService,
+          networkConfig: this.blockchainProvider.config,
+          services: {
+            nodeProvider: this.blockchainProvider,
+            userModelService: this.modelFactoryService,
+          },
+        };
 
-      for (const m of models) {
-        await m.mempoolTick?.(ctx);
+        for (const m of models) {
+          await m.mempoolTick?.(ctx);
+        }
+      } finally {
+        this.mempoolTickReadService.release();
       }
 
       await this.eventStore.save([...models, mempoolModel]);

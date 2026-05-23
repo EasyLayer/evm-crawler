@@ -66,10 +66,4 @@ export class NetworkReadService {
   }> {
     return this.networkModelFactory.getBlocksInRange(startHeight, endHeight);
   }
-
-  public async hasTransaction(hash: string): Promise<boolean> {
-    const model = await this.networkModelFactory.initModel();
-    const last = model.getLastBlock();
-    return !!last?.transactions?.includes(hash);
-  }
 }

@@ -11,6 +11,16 @@ const parseUrls = (value: string | undefined): string[] => {
     .filter((u) => u.length > 0);
 };
 
+/**
+ * Parses an env value into a finite number. Returns the fallback only when the
+ * value is missing or cannot be parsed — a legitimate 0 is preserved.
+ */
+const parseNumber = (value: unknown, fallback: number): number => {
+  if (value === undefined || value === null || value === '') return fallback;
+  const parsed = typeof value === 'number' ? value : parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
 export interface MempoolProviderConnection {
   httpUrl?: string;
   wsUrl?: string;
@@ -43,19 +53,19 @@ export class ProvidersConfig {
   @JSONSchema({ description: 'Mempool WebSocket URLs (comma-separated). Enables subscribe-ws mempool tracking.' })
   PROVIDER_MEMPOOL_WS_URLS?: string[];
 
-  @Transform(({ value }) => parseInt(value, 10) || 1000)
+  @Transform(({ value }) => parseNumber(value, 1000))
   @IsNumber()
   @JSONSchema({ description: 'Maximum batch size for RPC requests.' })
   PROVIDER_RATE_LIMIT_MAX_BATCH_SIZE: number = 1000;
 
-  @Transform(({ value }) => parseInt(value, 10) || 1)
+  @Transform(({ value }) => parseNumber(value, 1))
   @IsNumber()
   @JSONSchema({ description: 'Maximum concurrent RPC requests.' })
   PROVIDER_RATE_LIMIT_MAX_CONCURRENT_REQUESTS: number = 1;
 
-  @Transform(({ value }) => parseInt(value, 10) || 1000)
+  @Transform(({ value }) => parseNumber(value, 1000))
   @IsNumber()
-  @JSONSchema({ description: 'Delay between RPC request batches in milliseconds.' })
+  @JSONSchema({ description: 'Delay between RPC request batches in milliseconds. 0 means no delay.' })
   PROVIDER_RATE_LIMIT_REQUEST_DELAY_MS: number = 1000;
 
   getRateLimits() {

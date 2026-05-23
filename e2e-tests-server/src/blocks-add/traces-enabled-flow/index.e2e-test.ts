@@ -87,7 +87,6 @@ describe('EVM Crawler: Add Blocks Flow (traces enabled)', () => {
   it('should request traces for each unique block height', () => {
     const calledHeights = getTracesSpy.mock.calls.map(([height]) => Number(height));
     const uniqueHeights = [...new Set(calledHeights)].sort((a, b) => a - b);
-
     expect(uniqueHeights).toEqual(mockBlocks.map((block) => block.blockNumber));
   });
 
@@ -100,25 +99,56 @@ describe('EVM Crawler: Add Blocks Flow (traces enabled)', () => {
 
     const byHeight = new Map(events.map((event: any) => [Number(event.blockHeight), payloadToObject(event.payload)]));
 
+    // Block 0: 3 traces in a nested call tree, first is the top-level call.
     expect(byHeight.get(0)).toMatchObject({
       blockNumber: 0,
-      traceCount: 1,
+      traceCount: 3,
       firstTraceType: 'call',
       firstTraceTransactionHash: mockTraces[0]![0]!.transactionHash,
     });
 
+    // Block 1: 1 failed trace (Reverted).
     expect(byHeight.get(1)).toMatchObject({
       blockNumber: 1,
-      traceCount: 0,
-      firstTraceType: null,
-      firstTraceTransactionHash: null,
+      traceCount: 1,
+      firstTraceType: 'call',
     });
 
+    // Block 2: create + suicide, 2 traces total, first is the create.
     expect(byHeight.get(2)).toMatchObject({
       blockNumber: 2,
-      traceCount: 1,
+      traceCount: 2,
       firstTraceType: 'create',
       firstTraceTransactionHash: mockTraces[2]![0]!.transactionHash,
     });
+  });
+
+  it('preserves traceAddress / subtraces metadata for nested trace trees (block 0)', () => {
+    // The expanded block 0 fixture is a nested-call tree:
+    //   [] root, subtraces=2 → [0] (call to B), [1] (call to CONTRACT_A)
+    const traces = mockTraces[0]!;
+    expect(traces).toHaveLength(3);
+    expect(traces[0]!.subtraces).toBe(2);
+    expect(traces[0]!.traceAddress).toEqual([]);
+    expect(traces[1]!.traceAddress).toEqual([0]);
+    expect(traces[2]!.traceAddress).toEqual([1]);
+  });
+
+  it('represents a failed trace (Reverted) with an error field and no result (block 1)', () => {
+    const traces = mockTraces[1]!;
+    expect(traces).toHaveLength(1);
+    const failed = traces[0]! as any;
+    expect(failed.error).toBe('Reverted');
+    expect(failed.result).toBeUndefined();
+  });
+
+  it('distinguishes call / create / suicide trace types across the fixtures', () => {
+    const allTypes = new Set<string>();
+    for (const traces of Object.values(mockTraces)) {
+      for (const trace of traces) allTypes.add(trace.type);
+    }
+    expect(allTypes.has('call')).toBe(true);
+    expect(allTypes.has('create')).toBe(true);
+    expect(allTypes.has('suicide')).toBe(true);
   });
 });
