@@ -7,7 +7,15 @@ import { cleanDataFolder } from '../+helpers/clean-data-folder';
 import BlocksModel from './blocks.model';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 // Patch provider methods directly — jest.spyOn is not available in Electron process
+BlockchainProviderService.prototype.getCurrentBlockHeightFromNetwork = async function (): Promise<number> {
+  return mockBlocks[mockBlocks.length - 1]!.blockNumber;
+};
+
 BlockchainProviderService.prototype.getManyBlocksStatsByHeights = async function (heights: any[]): Promise<any> {
   const hs = heights.map(Number);
   return mockBlocks
@@ -15,7 +23,7 @@ BlockchainProviderService.prototype.getManyBlocksStatsByHeights = async function
     .map((block) => ({
       hash: block.hash,
       number: block.blockNumber,
-      size: 1,
+      size: block.size,
       gasLimit: block.gasLimit,
       gasUsed: block.gasUsed,
       gasUsedPercentage: block.gasUsed / block.gasLimit,
@@ -33,7 +41,7 @@ BlockchainProviderService.prototype.getManyBlocksByHeights = async function (hei
   return hs.map((h) => {
     const blk = mockBlocks.find((b) => b.blockNumber === h);
     if (!blk) throw new Error(`No mock EVM block for blockNumber ${h}`);
-    return blk;
+    return cloneBlock(blk);
   });
 };
 
@@ -42,12 +50,13 @@ BlockchainProviderService.prototype.getManyBlocksWithReceipts = async function (
   return hs.map((h) => {
     const blk = mockBlocks.find((b) => b.blockNumber === h);
     if (!blk) throw new Error(`No mock EVM block for blockNumber ${h}`);
-    return blk;
+    return cloneBlock(blk);
   });
 };
 
 BlockchainProviderService.prototype.getOneBlockByHeight = async function (height: string | number) {
-  return mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null;
+  const block = mockBlocks.find((b) => b.blockNumber === Number(height));
+  return block ? cloneBlock(block) : null;
 };
 
 async function run() {

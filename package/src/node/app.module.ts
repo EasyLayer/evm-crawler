@@ -16,6 +16,7 @@ import {
   MempoolModelFactoryService,
   NetworkReadService,
   MempoolReadService,
+  MempoolTickReadService,
   NETWORK_AGGREGATE_ID,
   MEMPOOL_AGGREGATE_ID,
 } from '../domain-layer/services';
@@ -65,6 +66,9 @@ export class AppModule {
     const queueLoaderRequestBlocksBatchSize = businessConfig.NETWORK_MAX_BLOCK_WEIGHT * 2;
     const maxQueueSize = queueIteratorBlocksBatchSize * 10;
 
+    // Shell aggregates: used only to register the aggregate type in EventStoreModule.
+    // The real runtime instances are created by the model factory services with
+    // proper maxSize / minGasPrice / TTL parameters.
     const networkModel = new Network({ aggregateId: NETWORK_AGGREGATE_ID, maxSize: 0, blockHeight: -1 });
     const networkConfig = businessConfig.getNetworkConfig();
     const mempoolModel = new Mempool({
@@ -123,6 +127,25 @@ export class AppModule {
           ...(eventstoreConfig.EVENTSTORE_DB_PASSWORD && {
             password: eventstoreConfig.EVENTSTORE_DB_PASSWORD,
           }),
+          ...(() => {
+            const extra: Record<string, number> = {};
+            if (eventstoreConfig.EVENTSTORE_PG_POOL_MIN !== undefined) {
+              extra.min = eventstoreConfig.EVENTSTORE_PG_POOL_MIN;
+            }
+            if (eventstoreConfig.EVENTSTORE_PG_POOL_MAX !== undefined) {
+              extra.max = eventstoreConfig.EVENTSTORE_PG_POOL_MAX;
+            }
+            if (eventstoreConfig.EVENTSTORE_PG_IDLE_TIMEOUT !== undefined) {
+              extra.idleTimeoutMillis = eventstoreConfig.EVENTSTORE_PG_IDLE_TIMEOUT;
+            }
+            if (eventstoreConfig.EVENTSTORE_PG_CONNECTION_TIMEOUT !== undefined) {
+              extra.connectionTimeoutMillis = eventstoreConfig.EVENTSTORE_PG_CONNECTION_TIMEOUT;
+            }
+            return Object.keys(extra).length > 0 ? { extra } : {};
+          })(),
+          ...(eventstoreConfig.EVENTSTORE_PG_QUERY_TIMEOUT !== undefined && {
+            maxQueryExecutionTime: eventstoreConfig.EVENTSTORE_PG_QUERY_TIMEOUT,
+          }),
         }),
         BlocksQueueModule.forRootAsync({
           mempoolCommandExecutor: MempoolCommandFactoryService,
@@ -166,6 +189,7 @@ export class AppModule {
         ReadStateExceptionHandlerService,
         NetworkReadService,
         MempoolReadService,
+        MempoolTickReadService,
         ...Providers,
       ],
       exports: [
@@ -176,6 +200,7 @@ export class AppModule {
         MempoolModelFactoryService,
         NetworkReadService,
         MempoolReadService,
+        MempoolTickReadService,
         ReadStateExceptionHandlerService,
         AppConfig,
         BusinessConfig,

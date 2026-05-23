@@ -8,6 +8,10 @@ import { cleanDataFolder } from '../+helpers/clean-data-folder';
 import BlocksModel, { AGGREGATE_ID } from './blocks.model';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 jest.setTimeout(60_000);
 
 describe('/EVM Crawler: WS Transport', () => {
@@ -18,6 +22,8 @@ describe('/EVM Crawler: WS Transport', () => {
   const expectedEventCount = mockBlocks.length;
 
   const receivedBlockAddedEvents: any[] = [];
+  const receivedBlockAddedEventsByHeight = new Map<number, any>();
+  const expectedBlockHeights = mockBlocks.map((block) => block.blockNumber);
   let resolved = false;
 
   beforeAll(async () => {
@@ -47,7 +53,7 @@ describe('/EVM Crawler: WS Transport', () => {
         return heights.map((h) => {
           const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
           if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-          return blk;
+          return cloneBlock(blk);
         });
       });
 
@@ -57,7 +63,7 @@ describe('/EVM Crawler: WS Transport', () => {
         return heights.map((h) => {
           const blk = mockBlocks.find((b) => b.blockNumber === Number(h));
           if (!blk) throw new Error(`No mock block for blockNumber ${h}`);
-          return blk;
+          return cloneBlock(blk);
         });
       });
 
@@ -73,8 +79,19 @@ describe('/EVM Crawler: WS Transport', () => {
     await client.connect();
 
     client.subscribe('BlockAddedEvent', async (event: any) => {
-      receivedBlockAddedEvents.push(event);
-      if (!resolved && receivedBlockAddedEvents.length >= expectedEventCount) {
+      if (resolved) return;
+      if (event?.eventType !== 'BlockAddedEvent' || typeof event.blockHeight !== 'number') return;
+
+      if (!receivedBlockAddedEventsByHeight.has(event.blockHeight)) {
+        receivedBlockAddedEventsByHeight.set(event.blockHeight, event);
+      }
+
+      const hasAllExpectedEvents = expectedBlockHeights.every((height) => receivedBlockAddedEventsByHeight.has(height));
+      if (hasAllExpectedEvents) {
+        receivedBlockAddedEvents.length = 0;
+        receivedBlockAddedEvents.push(
+          ...expectedBlockHeights.map((height) => receivedBlockAddedEventsByHeight.get(height))
+        );
         resolved = true;
         eventsDeferred.resolve();
       }

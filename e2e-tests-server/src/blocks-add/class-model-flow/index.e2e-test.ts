@@ -7,6 +7,10 @@ import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import BlocksModel from './blocks.model';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 jest
   .spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork')
   .mockResolvedValue(mockBlocks.length - 1);
@@ -17,7 +21,7 @@ jest
     return heights.map((height) => {
       const block = mockBlocks.find((item) => item.blockNumber === Number(height));
       if (!block) throw new Error(`No mock block for height ${height}`);
-      return block;
+      return cloneBlock(block);
     });
   });
 
@@ -27,7 +31,7 @@ jest
     return heights.map((height) => {
       const block = mockBlocks.find((item) => item.blockNumber === Number(height));
       if (!block) throw new Error(`No mock block for height ${height}`);
-      return block;
+      return cloneBlock(block);
     });
   });
 
@@ -37,7 +41,7 @@ jest
     return heights.map((height) => ({
       hash: mockBlocks.find((item) => item.blockNumber === Number(height))?.hash ?? '0x0',
       number: Number(height),
-      size: 3,
+      size: 2,
       gasLimit: 30_000_000,
       gasUsed: 21_000,
       gasUsedPercentage: 0.07,
@@ -52,9 +56,10 @@ jest
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((item) => item.blockNumber === Number(height)) ?? null
-  );
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    return block ? cloneBlock(block) : null;
+  });
 
 describe('EVM Crawler: Add Blocks Flow (class model)', () => {
   let dbService!: SQLiteService;

@@ -20,7 +20,7 @@ export class InitMempoolCommandHandler implements ICommandHandler<InitMempoolCom
   async execute({ payload }: InitMempoolCommand): Promise<void> {
     const { requestId } = payload;
 
-    if (this.businessConfig.START_BLOCK_HEIGHT) {
+    if (this.businessConfig.START_BLOCK_HEIGHT !== undefined) {
       throw new Error('Mempool cannot be initialized with the specified START_BLOCK_HEIGHT parameter');
     }
 

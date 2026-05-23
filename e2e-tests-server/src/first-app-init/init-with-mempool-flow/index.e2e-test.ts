@@ -6,6 +6,10 @@ import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
 jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockResolvedValue([]);
 jest
@@ -18,9 +22,10 @@ jest.spyOn(BlockchainProviderService.prototype, 'isMempoolAvailable', 'get').moc
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((b) => b.blockNumber === Number(height)) ?? null
-  );
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((b) => b.blockNumber === Number(height));
+    return block ? cloneBlock(block) : null;
+  });
 
 describe('EVM Crawler: First Init — With Mempool Flow', () => {
   let dbService!: SQLiteService;

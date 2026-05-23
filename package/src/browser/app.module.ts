@@ -15,6 +15,7 @@ import {
   NetworkModelFactoryService,
   MempoolModelFactoryService,
   MempoolReadService,
+  MempoolTickReadService,
   NetworkReadService,
   NETWORK_AGGREGATE_ID,
   MEMPOOL_AGGREGATE_ID,
@@ -74,6 +75,8 @@ export class BrowserAppModule {
     const queueLoaderRequestBlocksBatchSize = businessConfig.NETWORK_MAX_BLOCK_WEIGHT * 2;
     const maxQueueSize = queueIteratorBlocksBatchSize * 10;
 
+    // Shell aggregates: used only to register the aggregate type in EventStoreModule.
+    // The real runtime instances are created by the model factory services.
     const networkModel = new Network({ aggregateId: NETWORK_AGGREGATE_ID, maxSize: 0, blockHeight: -1 });
     const mempoolModel = new Mempool({
       aggregateId: MEMPOOL_AGGREGATE_ID,
@@ -174,6 +177,7 @@ export class BrowserAppModule {
         MempoolCommandFactoryService,
         MempoolModelFactoryService,
         MempoolReadService,
+        MempoolTickReadService,
         NetworkReadService,
         ...Providers,
       ],
@@ -196,6 +200,7 @@ export class BrowserAppModule {
         BlocksQueueModule,
         EventStoreModule,
         MempoolReadService,
+        MempoolTickReadService,
         NetworkReadService,
         ...Providers,
       ],

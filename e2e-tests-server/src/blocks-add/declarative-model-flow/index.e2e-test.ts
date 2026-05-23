@@ -7,22 +7,30 @@ import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import BlocksModel from './blocks.model';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(2);
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights')
-  .mockImplementation(async (heights) =>
-    heights.map((height) => mockBlocks.find((block) => block.blockNumber === Number(height))!)
-  );
-jest
-  .spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts')
-  .mockImplementation(async (heights) =>
-    heights.map((height) => mockBlocks.find((block) => block.blockNumber === Number(height))!)
-  );
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksByHeights').mockImplementation(async (heights) =>
+  heights.map((height) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    if (!block) throw new Error(`No mock block for height ${height}`);
+    return cloneBlock(block);
+  })
+);
+jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksWithReceipts').mockImplementation(async (heights) =>
+  heights.map((height) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    if (!block) throw new Error(`No mock block for height ${height}`);
+    return cloneBlock(block);
+  })
+);
 jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').mockImplementation(async (heights) =>
   heights.map((height) => ({
     hash: '0x0',
     number: Number(height),
-    size: 3,
+    size: 2,
     gasLimit: 30_000_000,
     gasUsed: 21_000,
     gasUsedPercentage: 0,
@@ -37,9 +45,10 @@ jest.spyOn(BlockchainProviderService.prototype, 'getManyBlocksStatsByHeights').m
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((block) => block.blockNumber === Number(height)) ?? null
-  );
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    return block ? cloneBlock(block) : null;
+  });
 
 describe('EVM Crawler: Add Blocks Flow (declarative model)', () => {
   let dbService!: SQLiteService;

@@ -20,7 +20,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_000,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {
@@ -81,7 +81,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_012,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {
@@ -142,7 +142,7 @@ export const mockBlocks: Block[] = [
     timestamp: 1_700_000_024,
     uncles: [],
     size: 3,
-    sizeWithoutReceipts: 2,
+    sizeWithoutReceipts: 3,
     baseFeePerGas: '0x3b9aca00',
     transactions: [
       {

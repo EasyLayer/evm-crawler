@@ -16,14 +16,7 @@ import {
   NetworkReadService,
 } from '../services';
 import { ModelFactoryService, Model, NormalizedModelCtor, ProcessBlockExecutionContext } from '../framework';
-
-export function deepFreeze<T>(obj: T): T {
-  Object.getOwnPropertyNames(obj).forEach((name) => {
-    const val = (obj as any)[name];
-    if (val && typeof val === 'object') deepFreeze(val);
-  });
-  return Object.freeze(obj);
-}
+import { deepFreeze } from '../../utils/deep-freeze';
 
 @Injectable()
 @CommandHandler(AddBlocksBatchCommand)

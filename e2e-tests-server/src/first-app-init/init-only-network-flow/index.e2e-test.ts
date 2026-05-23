@@ -6,15 +6,20 @@ import { SQLiteService } from '../../+helpers/sqlite/sqlite.service';
 import { cleanDataFolder } from '../../+helpers/clean-data-folder';
 import { mockBlocks } from './mocks';
 
+function cloneBlock<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value));
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(-1);
 
 jest
   .spyOn(BlockchainProviderService.prototype, 'getOneBlockByHeight')
-  .mockImplementation(
-    async (height: string | number) => mockBlocks.find((block) => block.blockNumber === Number(height)) ?? null
-  );
+  .mockImplementation(async (height: string | number) => {
+    const block = mockBlocks.find((item) => item.blockNumber === Number(height));
+    return block ? cloneBlock(block) : null;
+  });
 
 describe('EVM Crawler: First Init — Only Network Flow', () => {
   let dbService!: SQLiteService;
