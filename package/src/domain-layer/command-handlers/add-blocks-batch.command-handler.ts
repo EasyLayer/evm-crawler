@@ -17,6 +17,7 @@ import {
 } from '../services';
 import { ModelFactoryService, Model, NormalizedModelCtor, ProcessBlockExecutionContext } from '../framework';
 import { deepFreeze } from '../../utils/deep-freeze';
+import { BusinessConfig } from '../../config';
 
 @Injectable()
 @CommandHandler(AddBlocksBatchCommand)
@@ -29,6 +30,7 @@ export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBa
     private readonly eventStore: EventStoreWriteService,
     @Inject('FrameworkModelsConstructors') private readonly Models: NormalizedModelCtor[],
     private readonly modelFactoryService: ModelFactoryService,
+    private readonly businessConfig: BusinessConfig,
     private readonly networkReadService: NetworkReadService,
     private readonly mempoolReadService: MempoolReadService,
     private readonly mempoolModelFactory: MempoolModelFactoryService
@@ -89,7 +91,14 @@ export class AddBlocksBatchCommandHandler implements ICommandHandler<AddBlocksBa
         }
       }
 
-      await this.eventStore.save(mempoolModel ? [...models, networkModel, mempoolModel] : [...models, networkModel]);
+      const latestHeight = batch[batch.length - 1]!.blockNumber;
+      const depth = this.businessConfig.NETWORK_IRREVERSIBLE_DEPTH;
+      const irreversibleHeight = depth >= 0 ? Math.max(0, latestHeight - depth) : undefined;
+
+      await this.eventStore.save(mempoolModel ? [...models, networkModel, mempoolModel] : [...models, networkModel], {
+        irreversibleHeight,
+      });
+
       this.logger.verbose('Blocks saved into eventstore');
     } catch (error) {
       if (error instanceof BlockchainValidationError) {

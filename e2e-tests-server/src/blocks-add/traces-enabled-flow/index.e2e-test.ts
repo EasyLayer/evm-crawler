@@ -91,7 +91,7 @@ describe('EVM Crawler: Add Blocks Flow (traces enabled)', () => {
   });
 
   it('should persist trace-derived data from block.traces into model events', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const events = await dbService.all(`SELECT * FROM tracesmodel ORDER BY blockHeight ASC`);

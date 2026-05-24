@@ -45,7 +45,7 @@ describe('EVM Crawler: First Init — Only Network Flow', () => {
   });
 
   it('should bootstrap, create database with required tables, and persist initialization events', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const [integrity] = await dbService.all(`PRAGMA integrity_check`);

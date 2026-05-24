@@ -86,7 +86,7 @@ describe('EVM Crawler: Add Blocks Flow (class model)', () => {
   });
 
   it('should persist EvmNetworkBlocksAddedEvents with correct block data', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const networkEvents = await dbService.all(

@@ -19,7 +19,6 @@ export class NetworkModelFactoryService {
       maxSize: Math.max(this.blocksQueueConfig.BLOCKS_QUEUE_LOADER_PRELOADER_BASE_COUNT, 1000),
       blockHeight: -1,
       options: {
-        allowPruning: false,
         snapshotsEnabled: true,
         snapshotInterval: 25,
       },

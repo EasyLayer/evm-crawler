@@ -53,7 +53,7 @@ describe('EVM Crawler: First Init — With Mempool Flow', () => {
   });
 
   it('should create both network and mempool tables', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const tables = await dbService.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);

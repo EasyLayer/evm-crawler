@@ -36,7 +36,7 @@ describe('EVM Crawler: Clear Network Table — Decline Flow (user says "no")', (
     config({ path: resolve(process.cwd(), 'src/second-app-init/clear-network-table-decline-flow/.env') });
     await cleanDataFolder('eventstore');
 
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     await db.exec(networkTableSQL);
 
@@ -61,7 +61,7 @@ describe('EVM Crawler: Clear Network Table — Decline Flow (user says "no")', (
   });
 
   it('leaves the seeded BlocksAdded event in the database (no clear happened)', async () => {
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     const rows = await db.all(`SELECT * FROM network ORDER BY id ASC`);
     // Exactly the seeded row, no Cleared event, no Initialized event.

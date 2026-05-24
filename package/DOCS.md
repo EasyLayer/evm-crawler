@@ -125,7 +125,9 @@ START_BLOCK_HEIGHT=19000000     # omit to start from current tip and follow only
 MAX_BLOCK_HEIGHT=19001000       # inclusive upper bound; omit for no limit
 
 # EventStore (default: SQLite)
+# EVENTSTORE_DB_NAME is a directory path — the crawler manages .sqlite3 files inside it
 EVENTSTORE_DB_TYPE=sqlite
+EVENTSTORE_DB_NAME=./eventstore
 
 # Transport (enable at least one for clients to connect)
 TRANSPORT_HTTP_HOST=0.0.0.0
@@ -484,6 +486,8 @@ Typical flow:
 | `TRACES_ENABLED` | boolean | Load trace data for each block. Provider must support trace APIs; otherwise startup/load must fail. |  |  |
 | `MEMPOOL_PENDING_TX_TTL_MS` | number | TTL for pending mempool transactions in milliseconds. |  |  |
 | `MEMPOOL_MAX_PENDING_TX_COUNT` | number | Maximum number of pending transactions to track in mempool aggregate. |  |  |
+| `NETWORK_IRREVERSIBLE_DEPTH` | number | Number of block confirmations required before a block height is considered irreversible. Used to determine when to rotate the active SQLite eventstore file. Set -1 to disable rotation. Default: 50 (Ethereum standard finality depth). | `50` | ✅ |
+| `ALLOW_PRUNING` | boolean | Allow deletion of old archived SQLite eventstore files after snapshot rotation. Global setting — applies to all models or none, since all models share the same files. Default: false. | `false` | ✅ |
 
 ### EventStoreConfig
 
