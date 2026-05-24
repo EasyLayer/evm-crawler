@@ -49,7 +49,7 @@ describe('EVM Crawler: Mempool Tick — Class Flow', () => {
   });
 
   it('creates the user model table and the mempool aggregate table', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const tables = await dbService.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);

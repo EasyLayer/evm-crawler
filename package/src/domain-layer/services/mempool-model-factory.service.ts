@@ -36,7 +36,6 @@ export class MempoolModelFactoryService {
       maxPendingCount: this.businessConfig.MEMPOOL_MAX_PENDING_TX_COUNT,
       pendingTxTtlMs: this.businessConfig.MEMPOOL_PENDING_TX_TTL_MS,
       options: {
-        allowPruning: true,
         snapshotsEnabled: true,
         snapshotInterval: 6,
       },

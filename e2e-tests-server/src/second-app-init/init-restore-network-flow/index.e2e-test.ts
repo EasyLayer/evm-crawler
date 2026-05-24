@@ -76,7 +76,7 @@ describe('EVM Crawler: Second App Init — Restore Network Flow', () => {
   });
 
   it('should init existing Network aggregate with correct height', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const events = await dbService.all(`SELECT * FROM network ORDER BY version ASC`);

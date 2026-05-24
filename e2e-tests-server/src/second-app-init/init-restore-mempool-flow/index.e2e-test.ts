@@ -81,7 +81,7 @@ describe('EVM Crawler: Second Initialization Only Mempool Flow', () => {
     config({ path: resolve(process.cwd(), 'src/second-app-init/init-restore-mempool-flow/.env') });
     await cleanDataFolder('eventstore');
 
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
     await dbService.exec(mempoolTableSQL);
 
@@ -110,7 +110,7 @@ describe('EVM Crawler: Second Initialization Only Mempool Flow', () => {
   });
 
   it('should init existing Mempool aggregate with valid new Initialized event', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
 
     const rows = await dbService.all(

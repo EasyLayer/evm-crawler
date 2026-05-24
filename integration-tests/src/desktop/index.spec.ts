@@ -63,7 +63,7 @@ describe('EVM Crawler: Desktop Add Blocks (sqlite)', () => {
     expect(code).toBe(0);
 
     // Read SQLite from the test process
-    const dbPath = resolve(process.cwd(), 'eventstore/evm.db');
+    const dbPath = resolve(process.cwd(), 'eventstore/current.sqlite3');
     mkdirSync(dirname(dbPath), { recursive: true });
 
     const db = new SQLiteService({ path: dbPath });

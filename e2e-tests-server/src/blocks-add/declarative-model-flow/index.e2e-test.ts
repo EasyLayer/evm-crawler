@@ -73,7 +73,7 @@ describe('EVM Crawler: Add Blocks Flow (declarative model)', () => {
   });
 
   it('should create BlocksModel table in SQLite', async () => {
-    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    dbService = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await dbService.connect();
     const tables = await dbService.all(`SELECT name FROM sqlite_master WHERE type='table' ORDER BY name`);
     const names = tables.map((row: any) => row.name);

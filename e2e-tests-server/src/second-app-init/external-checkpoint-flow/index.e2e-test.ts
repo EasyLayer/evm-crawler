@@ -37,7 +37,7 @@ describe('EVM Crawler: Second Initialization External Checkpoint Flow', () => {
     jest.spyOn(BlockchainProviderService.prototype, 'getCurrentBlockHeightFromNetwork').mockResolvedValue(-1);
     config({ path: resolve(process.cwd(), 'src/second-app-init/external-checkpoint-flow/.env') });
     await cleanDataFolder('eventstore');
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
   });
   afterEach(async () => {
@@ -52,7 +52,7 @@ describe('EVM Crawler: Second Initialization External Checkpoint Flow', () => {
       config: { lastBlockHeight: 1 },
       testing: { handlerEventsToWait: [{ eventType: EvmNetworkInitializedEvent, count: 1 }] },
     });
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     const [integrity] = await db.all(`PRAGMA integrity_check`);
     expect(integrity.integrity_check).toBe('ok');
@@ -88,7 +88,7 @@ describe('EVM Crawler: Second Initialization External Checkpoint Flow', () => {
       config: { lastBlockHeight: -1 },
       testing: { handlerEventsToWait: [{ eventType: EvmNetworkInitializedEvent, count: 1 }] },
     });
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     const rows = await db.all(`SELECT * FROM network ORDER BY id ASC`);
     // No BlocksAdded events should survive
@@ -116,7 +116,7 @@ describe('EVM Crawler: Second Initialization External Checkpoint Flow', () => {
       config: { lastBlockHeight: 3 },
       testing: { handlerEventsToWait: [{ eventType: EvmNetworkInitializedEvent, count: 1 }] },
     });
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     const rows = await db.all(`SELECT * FROM network ORDER BY id ASC`);
     // The originally seeded BlocksAdded events for heights 1, 2, 3 must remain

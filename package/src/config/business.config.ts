@@ -207,6 +207,36 @@ export class BusinessConfig {
   @JSONSchema({ description: 'Maximum number of pending transactions to track in mempool aggregate.' })
   MEMPOOL_MAX_PENDING_TX_COUNT: number = 10_000;
 
+  @Transform(({ value }) => {
+    const n = parseInt(value, 10);
+    // -1 disables SQLite file rotation entirely
+    return Number.isFinite(n) ? n : 50;
+  })
+  @IsNumber()
+  @JSONSchema({
+    description:
+      'Number of block confirmations required before a block height is considered irreversible. ' +
+      'Used to determine when to rotate the active SQLite eventstore file. ' +
+      'Set -1 to disable rotation. Default: 50 (Ethereum standard finality depth).',
+    default: 50,
+  })
+  NETWORK_IRREVERSIBLE_DEPTH: number = 50;
+
+  @Transform(({ value }) => {
+    if (value === 'true' || value === '1') return true;
+    if (value === 'false' || value === '0') return false;
+    return false;
+  })
+  @IsBoolean()
+  @JSONSchema({
+    description:
+      'Allow deletion of old archived SQLite eventstore files after snapshot rotation. ' +
+      'Global setting — applies to all models or none, since all models share the same files. ' +
+      'Default: false.',
+    default: false,
+  })
+  ALLOW_PRUNING: boolean = false;
+
   /**
    * Builds the chain runtime config passed into @easylayer/evm.
    *

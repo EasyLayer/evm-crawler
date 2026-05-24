@@ -34,7 +34,7 @@ describe('EVM Crawler: Clear Network Table Flow', () => {
     jest.resetModules();
     config({ path: resolve(process.cwd(), 'src/second-app-init/clear-network-table-flow/.env') });
     await cleanDataFolder('eventstore');
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     await db.exec(networkTableSQL);
     const payloadBuffer = Buffer.from(JSON.stringify(seedNetworkEvent.payload), 'utf8');
@@ -55,7 +55,7 @@ describe('EVM Crawler: Clear Network Table Flow', () => {
   });
 
   it('should clear network table and re-initialize', async () => {
-    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/evm.db') });
+    db = new SQLiteService({ path: resolve(process.cwd(), 'eventstore/current.sqlite3') });
     await db.connect();
     const [integrity] = await db.all(`PRAGMA integrity_check`);
     expect(integrity.integrity_check).toBe('ok');

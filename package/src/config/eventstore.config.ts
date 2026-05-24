@@ -15,7 +15,7 @@ function defaultDbName(dbType?: any, incoming?: string): string {
 
   // Node/Electron:
   if (dbType === 'sqlite' || !dbType) {
-    return `${process.cwd()}/eventstore/evm.db`;
+    return `${process.cwd()}/eventstore`;
   }
   if (dbType === 'postgres') {
     return 'evm';
