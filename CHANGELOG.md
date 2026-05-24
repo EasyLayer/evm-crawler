@@ -1,3 +1,6 @@
+## <small>0.2.1 (2026-05-24)</small>
+
+* feat: implemented eventstore rotation mechanism for sqlite only; ([dd2cc9c](https://github.com/EasyLayer/evm-crawler/commit/dd2cc9c))
 ## 0.2.0 (2026-05-23)
 
 * chore: added context; ([2063972](https://github.com/EasyLayer/evm-crawler/commit/2063972))
